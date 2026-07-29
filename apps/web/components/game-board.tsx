@@ -30,6 +30,7 @@ type Selection =
 interface PlayedCardMoment {
   card: CardInstance;
   playerName: string;
+  isSelf: boolean;
   turn: number;
 }
 
@@ -86,6 +87,7 @@ function playedCardFromLog(
     return {
       card,
       playerName: player.id === view.selfPlayerId ? "あなた" : player.nickname,
+      isSelf: player.id === view.selfPlayerId,
       turn,
     };
   }
@@ -468,6 +470,31 @@ export function GameBoard({
         </div>
       )}
 
+      {playedCard && (
+        <div
+          className={`played-card-stage ${playedCard.isSelf ? "is-self-play" : "is-opponent-play"}`}
+          key={`${playedCard.card.id}-${playedCard.turn}`}
+          role="status"
+          aria-live="polite"
+          aria-label={`${playedCard.playerName}が${CARD_BY_RANK[playedCard.card.rank]?.displayName}を使用`}
+        >
+          <span className="play-side-label">
+            {playedCard.isSelf ? "YOUR PLAY" : "OPPONENT PLAY"}
+          </span>
+          <span className="cast-ring cast-ring-a" aria-hidden="true" />
+          <span className="cast-ring cast-ring-b" aria-hidden="true" />
+          <GameCard card={playedCard.card} />
+          <div className="played-card-label">
+            <small>{playedCard.playerName}が使用</small>
+            <strong>
+              {CARD_BY_RANK[playedCard.card.rank]?.displayName} ·{" "}
+              {CARD_BY_RANK[playedCard.card.rank]?.effectName}
+            </strong>
+            <span>{CARD_BY_RANK[playedCard.card.rank]?.description}</span>
+          </div>
+        </div>
+      )}
+
       <div className="game-layout">
         <div className="table-zone">
           <div className="table-aurora" aria-hidden="true">
@@ -542,26 +569,6 @@ export function GameBoard({
               );
             })}
           </div>
-
-          {playedCard && (
-            <div
-              className="played-card-stage"
-              key={`${playedCard.card.id}-${playedCard.turn}`}
-              aria-hidden="true"
-            >
-              <span className="cast-ring cast-ring-a" />
-              <span className="cast-ring cast-ring-b" />
-              <GameCard card={playedCard.card} />
-              <div className="played-card-label">
-                <small>{playedCard.playerName}が発動</small>
-                <strong>
-                  {CARD_BY_RANK[playedCard.card.rank]?.displayName} ·{" "}
-                  {CARD_BY_RANK[playedCard.card.rank]?.effectName}
-                </strong>
-                <span>{CARD_BY_RANK[playedCard.card.rank]?.description}</span>
-              </div>
-            </div>
-          )}
 
           {drawAnimationKey > 0 && (
             <span className="draw-flight" key={drawAnimationKey} aria-hidden="true">
