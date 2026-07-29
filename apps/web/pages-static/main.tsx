@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { CpuGame } from "../components/cpu-game";
+import { PublicGame } from "./public-game";
 import "../app/globals.css";
 
 function StaticGame() {
@@ -20,11 +20,11 @@ function StaticGame() {
           </span>
         </a>
         <nav aria-label="メインナビゲーション">
-          <a href="#main">CPU対戦</a>
+          <a href="#main">対戦モード</a>
         </nav>
       </header>
       <main id="main">
-        <CpuGame />
+        <PublicGame />
       </main>
       <footer className="site-footer">
         <span>TENFOLD — an original card game</span>

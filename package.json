@@ -15,7 +15,8 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:pages": "playwright test --config playwright.pages.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "latest",

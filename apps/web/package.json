@@ -16,6 +16,7 @@
     "@tenfold/game-engine": "workspace:*",
     "@tenfold/shared": "workspace:*",
     "next": "latest",
+    "peerjs": "^1.5.5",
     "react": "latest",
     "react-dom": "latest",
     "socket.io-client": "latest",
