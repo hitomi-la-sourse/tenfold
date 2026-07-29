@@ -808,34 +808,44 @@ main {
   font-size: 0.65rem;
 }
 
-.card-hero {
+.card-hero,
+.effect-hero {
   --card-color: #f0d9a1;
 }
-.card-emperor {
+.card-emperor,
+.effect-emperor {
   --card-color: #dda96c;
 }
-.card-spirit {
+.card-spirit,
+.effect-spirit {
   --card-color: #7cc6cf;
 }
-.card-sage {
+.card-sage,
+.effect-sage {
   --card-color: #9fa7e9;
 }
-.card-noble {
+.card-noble,
+.effect-noble {
   --card-color: #d0a2cf;
 }
-.card-death {
+.card-death,
+.effect-death {
   --card-color: #b392ca;
 }
-.card-maiden {
+.card-maiden,
+.effect-maiden {
   --card-color: #7ec5a9;
 }
-.card-seer {
+.card-seer,
+.effect-seer {
   --card-color: #83aee2;
 }
-.card-soldier {
+.card-soldier,
+.effect-soldier {
   --card-color: #b9c0ce;
 }
-.card-boy {
+.card-boy,
+.effect-boy {
   --card-color: #d69a83;
 }
 
@@ -1523,15 +1533,39 @@ main {
 
 .mini-discards {
   position: absolute;
-  top: 83px;
+  top: 78px;
   left: 50%;
-  display: flex;
+  display: grid;
+  width: calc(100% - 1rem);
+  gap: 0.2rem;
   transform: translateX(-50%);
+}
+
+.mini-discards > span,
+.self-field-history > span {
+  color: var(--gold);
+  font-size: 0.48rem;
+  letter-spacing: 0.12em;
+  text-align: center;
+}
+
+.mini-discards > div {
+  display: flex;
+  min-height: 65px;
+  align-items: flex-start;
+  justify-content: center;
+  overflow: hidden;
 }
 
 .mini-discards .game-card {
   width: 42px;
-  margin-left: -16px;
+  flex: 0 0 42px;
+  margin-left: -19px;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.36);
+}
+
+.mini-discards .game-card:first-child {
+  margin-left: 0;
 }
 
 .shield-badge {
@@ -1556,7 +1590,7 @@ main {
   place-items: center;
   overflow: hidden;
   pointer-events: none;
-  animation: stageFlash 2600ms ease-out both;
+  animation: stageFlash 3000ms ease-out both;
 }
 
 .played-card-stage::before {
@@ -1575,7 +1609,7 @@ main {
   box-shadow:
     0 38px 90px rgba(0, 0, 0, 0.72),
     0 0 45px color-mix(in srgb, var(--card-color, #c9a96b) 26%, transparent);
-  animation: cardCast 2600ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: cardCast 3000ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .cast-ring {
@@ -1609,7 +1643,7 @@ main {
   background: rgba(5, 8, 17, 0.74);
   backdrop-filter: blur(8px);
   text-align: center;
-  animation: castLabel 2600ms ease-out both;
+  animation: castLabel 3000ms ease-out both;
 }
 
 .played-card-label small {
@@ -1632,35 +1666,229 @@ main {
 
 .effect-notice {
   position: fixed;
-  top: clamp(88px, 12vh, 132px);
+  top: 50%;
   left: 50%;
-  z-index: 35;
+  z-index: 40;
   display: grid;
-  width: min(520px, calc(100% - 2rem));
-  gap: 0.25rem;
-  padding: 0.8rem 1.1rem;
-  border: 1px solid rgba(201, 169, 107, 0.38);
-  background: rgba(5, 8, 17, 0.9);
+  width: min(620px, calc(100% - 2rem));
+  min-height: 154px;
+  grid-template-columns: 82px minmax(0, 1fr);
+  align-items: center;
+  gap: 1rem;
+  padding: 1.15rem 1.5rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--card-color, #c9a96b) 58%, transparent);
+  background:
+    linear-gradient(110deg, rgba(255, 255, 255, 0.025), transparent 38%), rgba(5, 8, 17, 0.95);
   box-shadow:
-    0 16px 50px rgba(0, 0, 0, 0.48),
-    inset 0 0 20px rgba(201, 169, 107, 0.05);
-  backdrop-filter: blur(12px);
+    0 32px 90px rgba(0, 0, 0, 0.64),
+    0 0 55px color-mix(in srgb, var(--card-color, #c9a96b) 16%, transparent),
+    inset 0 0 38px color-mix(in srgb, var(--card-color, #c9a96b) 7%, transparent);
+  backdrop-filter: blur(18px);
   pointer-events: none;
-  text-align: center;
-  transform: translateX(-50%);
-  animation: effectNotice 2800ms ease-out both;
+  transform: translate(-50%, -50%);
+  animation: effectNotice 3600ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.effect-notice small {
+.effect-notice::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    112deg,
+    transparent 20%,
+    color-mix(in srgb, var(--card-color, #c9a96b) 15%, transparent) 44%,
+    transparent 66%
+  );
+  content: "";
+  transform: translateX(-130%);
+  animation: effectSweep 1500ms 180ms ease-out both;
+}
+
+.effect-sigil {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  width: 76px;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--card-color, #c9a96b) 55%, transparent);
+  border-radius: 50%;
+  color: color-mix(in srgb, var(--card-color, #c9a96b) 72%, white);
+  background: color-mix(in srgb, var(--card-color, #c9a96b) 8%, rgba(7, 12, 25, 0.94));
+  box-shadow:
+    0 0 30px color-mix(in srgb, var(--card-color, #c9a96b) 18%, transparent),
+    inset 0 0 18px color-mix(in srgb, var(--card-color, #c9a96b) 12%, transparent);
+  animation: effectSigil 1600ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.effect-sigil svg {
+  width: 34px;
+  height: 34px;
+}
+
+.effect-wave {
+  position: absolute;
+  top: 50%;
+  left: 42px;
+  width: 120px;
+  aspect-ratio: 1;
+  border: 1px solid color-mix(in srgb, var(--card-color, #c9a96b) 36%, transparent);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  animation: effectWave 2100ms ease-out both;
+}
+
+.effect-wave-b {
+  animation-delay: 320ms;
+}
+
+.effect-notice-copy {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  gap: 0.42rem;
+  text-align: left;
+}
+
+.effect-notice-copy > small {
   color: var(--gold);
   font-size: 0.5rem;
   letter-spacing: 0.2em;
 }
 
-.effect-notice strong {
+.effect-notice-copy > strong {
   font-family: var(--serif);
-  font-size: 0.88rem;
+  font-size: clamp(0.94rem, 2vw, 1.18rem);
   font-weight: 500;
+  line-height: 1.55;
+}
+
+.effect-notice.is-duel {
+  min-height: 280px;
+  grid-template-columns: 70px minmax(0, 1fr);
+  animation-duration: 4800ms;
+}
+
+.duel-title {
+  color: var(--gold-bright);
+  font-size: 1.35rem !important;
+  letter-spacing: 0.08em;
+}
+
+.duel-contestants {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2.2rem;
+  margin-top: 0.3rem;
+}
+
+.duel-contestants > span {
+  display: grid;
+  min-height: 82px;
+  place-content: center;
+  gap: 0.4rem;
+  padding: 0.7rem;
+  border: 1px solid var(--line-cool);
+  background: rgba(8, 13, 26, 0.8);
+  text-align: center;
+  animation: duelContestant 900ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.duel-contestants > span:nth-child(2) {
+  animation-delay: 140ms;
+}
+
+.duel-contestants > span.is-winner {
+  border-color: rgba(240, 217, 161, 0.72);
+  box-shadow: 0 0 28px rgba(201, 169, 107, 0.17);
+  animation:
+    duelContestant 900ms 140ms cubic-bezier(0.16, 1, 0.3, 1) backwards,
+    duelWinner 1.2s 1s ease-out both;
+}
+
+.duel-contestants > span.is-loser {
+  animation:
+    duelContestant 900ms 140ms cubic-bezier(0.16, 1, 0.3, 1) backwards,
+    duelLoser 1s 1.05s ease-out both;
+}
+
+.duel-contestants b {
+  overflow: hidden;
+  font-family: var(--serif);
+  font-size: 0.86rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.duel-contestants em {
+  color: var(--gold);
+  font-size: 0.58rem;
+  font-style: normal;
+  letter-spacing: 0.2em;
+}
+
+.duel-contestants > i {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 3;
+  display: grid;
+  width: 38px;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 1px solid var(--gold);
+  border-radius: 50%;
+  color: var(--gold-bright);
+  background: #080d1a;
+  font-family: Georgia, serif;
+  font-size: 0.64rem;
+  font-style: normal;
+  transform: translate(-50%, -50%);
+  animation: duelVs 900ms 300ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.duel-verdict {
+  margin: 0.1rem 0 0;
+  color: #c8ced9;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+}
+
+.self-field-history {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0.45rem auto 0;
+  padding: 0.45rem 0.6rem;
+  border-top: 1px solid rgba(201, 169, 107, 0.12);
+  border-bottom: 1px solid rgba(201, 169, 107, 0.12);
+  background: rgba(5, 8, 17, 0.32);
+}
+
+.self-field-history > div {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: center;
+  overflow-x: auto;
+  padding: 0.15rem;
+}
+
+.self-field-history .game-card {
+  width: 50px;
+  flex: 0 0 50px;
+  margin-left: -15px;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.32);
+}
+
+.self-field-history .game-card:first-child {
+  margin-left: 0;
+}
+
+.self-field-history > div > small {
+  color: var(--muted);
+  font-size: 0.54rem;
 }
 
 .draw-flight {
@@ -2524,7 +2752,9 @@ button.game-card.is-selected .card-foil {
   position: relative;
   z-index: 2;
   width: min(100%, 620px);
+  max-height: calc(100vh - 2rem);
   padding: clamp(2rem, 5vw, 4rem);
+  overflow-y: auto;
   border: 1px solid var(--gold);
   background: radial-gradient(circle at 50% 0, rgba(201, 169, 107, 0.14), transparent 42%), #0b1120;
   box-shadow: 0 40px 120px rgba(0, 0, 0, 0.65);
@@ -2604,22 +2834,46 @@ button.game-card.is-selected .card-foil {
 
 .result-players > div {
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 0.2rem 1rem;
+  gap: 0.6rem;
   padding: 0.8rem 0;
   border-bottom: 1px solid var(--line-cool);
   text-align: left;
 }
 
-.result-players b {
+.result-player-summary {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.2rem 1rem;
+}
+
+.result-player-summary b {
   color: var(--gold);
   font-size: 0.65rem;
 }
 
-.result-players small {
+.result-player-summary small {
   grid-column: 1 / -1;
   color: var(--muted);
   font-size: 0.58rem;
+}
+
+.result-field-history {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  overflow-x: auto;
+  padding: 0.2rem;
+}
+
+.result-field-history .game-card {
+  width: 42px;
+  flex: 0 0 42px;
+  margin-left: -12px;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.32);
+}
+
+.result-field-history .game-card:first-child {
+  margin-left: 0;
 }
 
 .result-actions {
@@ -2886,16 +3140,95 @@ button.game-card.is-selected .card-foil {
 @keyframes effectNotice {
   0% {
     opacity: 0;
-    transform: translate(-50%, -10px) scale(0.96);
+    transform: translate(-50%, calc(-50% + 18px)) scale(0.9);
   }
-  12%,
-  82% {
+  14%,
+  84% {
     opacity: 1;
-    transform: translate(-50%, 0) scale(1);
+    transform: translate(-50%, -50%) scale(1);
   }
   100% {
     opacity: 0;
-    transform: translate(-50%, -6px) scale(0.98);
+    transform: translate(-50%, calc(-50% - 12px)) scale(0.97);
+  }
+}
+
+@keyframes effectSweep {
+  to {
+    transform: translateX(130%);
+  }
+}
+
+@keyframes effectSigil {
+  0% {
+    opacity: 0;
+    transform: rotate(-36deg) scale(0.35);
+  }
+  52% {
+    opacity: 1;
+    transform: rotate(5deg) scale(1.1);
+  }
+  100% {
+    transform: rotate(0) scale(1);
+  }
+}
+
+@keyframes effectWave {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.25);
+  }
+  28% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(2.1);
+  }
+}
+
+@keyframes duelContestant {
+  from {
+    opacity: 0;
+    transform: translateX(-24px) scale(0.92);
+  }
+}
+
+@keyframes duelVs {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(-90deg) scale(0.25);
+  }
+}
+
+@keyframes duelWinner {
+  0% {
+    transform: scale(1);
+  }
+  42% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1.02);
+  }
+}
+
+@keyframes duelLoser {
+  0% {
+    filter: grayscale(0);
+    opacity: 1;
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-4px);
+  }
+  50% {
+    transform: translateX(4px);
+  }
+  100% {
+    filter: grayscale(1);
+    opacity: 0.42;
+    transform: translateX(0) scale(0.96);
   }
 }
 
@@ -3236,7 +3569,39 @@ button.game-card.is-selected .card-foil {
   }
 
   .effect-notice {
-    top: 76px;
+    top: 50%;
+    min-height: 132px;
+    grid-template-columns: 58px minmax(0, 1fr);
+    gap: 0.7rem;
+    padding: 0.9rem;
+  }
+
+  .effect-sigil {
+    width: 56px;
+  }
+
+  .effect-sigil svg {
+    width: 27px;
+    height: 27px;
+  }
+
+  .effect-wave {
+    left: 28px;
+    width: 90px;
+  }
+
+  .effect-notice.is-duel {
+    min-height: 260px;
+    grid-template-columns: 1fr;
+  }
+
+  .effect-notice.is-duel .effect-sigil {
+    display: none;
+  }
+
+  .duel-title,
+  .effect-notice-copy > small {
+    text-align: center;
   }
 
   .cast-ring {
@@ -3254,6 +3619,10 @@ button.game-card.is-selected .card-foil {
   .game-sidebar {
     grid-template-columns: 1fr;
     grid-template-rows: auto 300px;
+  }
+
+  .result-panel {
+    padding: 1.5rem;
   }
 
   .rank-picker {

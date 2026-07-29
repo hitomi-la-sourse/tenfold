@@ -377,12 +377,15 @@ function selectTarget(
     const actorRank = actor.hand[0]?.rank ?? -1;
     const targetRank = target.hand[0]?.rank ?? -1;
     if (actorRank === targetRank) {
+      addLog(state, `貴族の対決：${actor.nickname} VS ${target.nickname} — DRAW`);
       eliminatePlayers(state, [
         { playerId: actor.id, reason: "対決が同値でした" },
         { playerId: target.id, reason: "対決が同値でした" },
       ]);
     } else {
       const loser = actorRank < targetRank ? actor : target;
+      const winner = loser.id === actor.id ? target : actor;
+      addLog(state, `貴族の対決：${actor.nickname} VS ${target.nickname} — ${winner.nickname} WIN`);
       eliminatePlayers(state, [{ playerId: loser.id, reason: "対決に敗れました" }]);
     }
     finishTurn(state, random);

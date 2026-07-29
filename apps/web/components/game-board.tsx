@@ -6,6 +6,7 @@ import type { GameCommand } from "@tenfold/game-engine";
 import { CARD_BY_RANK } from "@tenfold/game-engine";
 import type { CardInstance, PlayerGameView } from "@tenfold/shared";
 import { CardBack, GameCard } from "./card";
+import { CardSigil } from "./sigil";
 import { getSoundEnabled, playEffect, saveSoundEnabled } from "@/lib/preferences";
 
 interface GameBoardProps {
@@ -32,14 +33,85 @@ interface PlayedCardMoment {
   turn: number;
 }
 
+interface DuelOutcome {
+  contestants: [string, string];
+  winner: string | null;
+}
+
+type PresentationEvent =
+  | {
+      kind: "CARD";
+      id: string;
+      moment: PlayedCardMoment;
+    }
+  | {
+      kind: "EFFECT";
+      id: string;
+      message: string;
+      sourceCard: CardInstance | null;
+      duel: DuelOutcome | null;
+    };
+
 interface EffectNotice {
   id: string;
   message: string;
+  sourceCard: CardInstance | null;
+  duel: DuelOutcome | null;
 }
 
 const TURN_ANNOUNCEMENT_MS = 1800;
-const PLAYED_CARD_VISIBLE_MS = 2600;
-const EFFECT_NOTICE_VISIBLE_MS = 2800;
+const PLAYED_CARD_VISIBLE_MS = 3000;
+const EFFECT_NOTICE_VISIBLE_MS = 3600;
+const DUEL_NOTICE_VISIBLE_MS = 4800;
+
+function playedCardFromLog(
+  view: PlayerGameView,
+  message: string,
+  turn: number,
+): PlayedCardMoment | null {
+  const definitions = Object.values(CARD_BY_RANK);
+  const players = [...view.players].sort(
+    (left, right) => right.nickname.length - left.nickname.length,
+  );
+
+  for (const player of players) {
+    const definition = definitions.find(
+      (candidate) => message === `${player.nickname}が${candidate.displayName}を出しました`,
+    );
+    if (!definition) continue;
+    const card = [...player.discards]
+      .reverse()
+      .find((candidate) => candidate.rank === definition.rank);
+    if (!card) return null;
+    return {
+      card,
+      playerName: player.id === view.selfPlayerId ? "あなた" : player.nickname,
+      turn,
+    };
+  }
+
+  return null;
+}
+
+function parseDuelOutcome(message: string): DuelOutcome | null {
+  const prefix = "貴族の対決：";
+  if (!message.startsWith(prefix)) return null;
+  const [matchup, result] = message.slice(prefix.length).split(" — ");
+  const contestants = matchup?.split(" VS ");
+  if (!result || contestants?.length !== 2) return null;
+  return {
+    contestants: [contestants[0]!, contestants[1]!],
+    winner: result === "DRAW" ? null : result.endsWith(" WIN") ? result.slice(0, -4) : null,
+  };
+}
+
+function isGenericResult(message: string): boolean {
+  return (
+    message.endsWith("の手番です") ||
+    message.endsWith("の勝利です") ||
+    message.includes("が脱落しました")
+  );
+}
 
 function commandForSelection(view: PlayerGameView, selection: Selection): GameCommand | null {
   if (!selection) return null;
@@ -75,20 +147,22 @@ export function GameBoard({
     self: boolean;
     turn: number;
   } | null>(null);
-  const [playedCard, setPlayedCard] = useState<PlayedCardMoment | null>(null);
-  const [effectNotice, setEffectNotice] = useState<EffectNotice | null>(null);
+  const [presentationQueue, setPresentationQueue] = useState<PresentationEvent[]>([]);
+  const [showResultOverlay, setShowResultOverlay] = useState(view.phase === "FINISHED");
   const [drawAnimationKey, setDrawAnimationKey] = useState(0);
   const rulesDialog = useRef<HTMLDialogElement>(null);
   const logList = useRef<HTMLOListElement>(null);
-  const discardCounts = useRef<Record<string, number> | null>(null);
   const previousDeckCount = useRef<number | null>(null);
   const previousLogCount = useRef<number | null>(null);
-  const playedCardTimer = useRef<number | null>(null);
-  const effectNoticeTimer = useRef<number | null>(null);
+  const activeSourceCard = useRef<PlayedCardMoment | null>(null);
   const isSelfTurn = view.currentPlayerId === view.selfPlayerId;
   const self = view.players.find((player) => player.id === view.selfPlayerId);
   const opponents = view.players.filter((player) => player.id !== view.selfPlayerId);
   const current = view.players.find((player) => player.id === view.currentPlayerId);
+  const activePresentation = presentationQueue[0] ?? null;
+  const playedCard = activePresentation?.kind === "CARD" ? activePresentation.moment : null;
+  const effectNotice: EffectNotice | null =
+    activePresentation?.kind === "EFFECT" ? activePresentation : null;
 
   useEffect(() => {
     setSoundEnabled(getSoundEnabled());
@@ -112,6 +186,13 @@ export function GameBoard({
     setSelection(null);
   }, [view.phase, view.turnNumber]);
   useEffect(() => {
+    previousLogCount.current = null;
+    previousDeckCount.current = null;
+    activeSourceCard.current = null;
+    setPresentationQueue([]);
+    setShowResultOverlay(view.phase === "FINISHED");
+  }, [view.gameId]);
+  useEffect(() => {
     logList.current?.scrollTo({
       top: logList.current.scrollHeight,
       behavior: "smooth",
@@ -121,7 +202,10 @@ export function GameBoard({
     if (view.phase === "FINISHED") playEffect("win", soundEnabled);
   }, [view.phase, soundEnabled]);
   useEffect(() => {
-    if (view.phase === "FINISHED") return;
+    if (view.phase === "FINISHED" || presentationQueue.length > 0) {
+      setTurnAnnouncement(null);
+      return;
+    }
     setTurnAnnouncement({
       label: isSelfTurn ? "あなたの手番" : `${current?.nickname ?? "相手"}の手番`,
       self: isSelfTurn,
@@ -129,63 +213,85 @@ export function GameBoard({
     });
     const timer = window.setTimeout(() => setTurnAnnouncement(null), TURN_ANNOUNCEMENT_MS);
     return () => window.clearTimeout(timer);
-  }, [view.currentPlayerId, view.turnNumber]);
+  }, [
+    current?.nickname,
+    isSelfTurn,
+    presentationQueue.length,
+    view.currentPlayerId,
+    view.phase,
+    view.turnNumber,
+  ]);
   useEffect(() => {
     const previous = previousLogCount.current;
     previousLogCount.current = view.logs.length;
     if (previous === null || previous > view.logs.length) return;
 
     const newEntries = view.logs.slice(previous);
-    const highlighted = [...newEntries]
-      .reverse()
-      .find((entry) => !entry.message.endsWith("の手番です"));
-    if (!highlighted) return;
+    const queued: PresentationEvent[] = [];
+    const playedEntries = new Set<string>();
 
-    setEffectNotice({ id: highlighted.id, message: highlighted.message });
-    if (effectNoticeTimer.current) window.clearTimeout(effectNoticeTimer.current);
-    effectNoticeTimer.current = window.setTimeout(
-      () => setEffectNotice(null),
-      EFFECT_NOTICE_VISIBLE_MS,
+    for (const entry of newEntries) {
+      const moment = playedCardFromLog(view, entry.message, entry.turn);
+      if (!moment) continue;
+      activeSourceCard.current = moment;
+      playedEntries.add(entry.id);
+      queued.push({ kind: "CARD", id: `card-${entry.id}`, moment });
+    }
+
+    const candidates = newEntries.filter(
+      (entry) => !playedEntries.has(entry.id) && !entry.message.endsWith("の手番です"),
     );
+    const highlighted =
+      candidates.find((entry) => entry.message.startsWith("貴族の対決：")) ??
+      [...candidates].reverse().find((entry) => !isGenericResult(entry.message)) ??
+      candidates.at(-1);
+
+    if (highlighted) {
+      queued.push({
+        kind: "EFFECT",
+        id: `effect-${highlighted.id}`,
+        message: highlighted.message,
+        sourceCard: activeSourceCard.current?.card ?? null,
+        duel: parseDuelOutcome(highlighted.message),
+      });
+    }
+
+    if (queued.length > 0) {
+      setPresentationQueue((currentQueue) => [...currentQueue, ...queued]);
+    }
   }, [view.logs]);
   useEffect(() => {
-    const nextCounts = Object.fromEntries(
-      view.players.map((player) => [player.id, player.discards.length]),
+    if (!activePresentation) return;
+    const duration =
+      activePresentation.kind === "CARD"
+        ? PLAYED_CARD_VISIBLE_MS
+        : activePresentation.duel
+          ? DUEL_NOTICE_VISIBLE_MS
+          : EFFECT_NOTICE_VISIBLE_MS;
+    const timer = window.setTimeout(
+      () => setPresentationQueue((currentQueue) => currentQueue.slice(1)),
+      duration,
     );
-    const previous = discardCounts.current;
-    if (previous) {
-      const changedPlayer = view.players.find(
-        (player) => player.discards.length > (previous[player.id] ?? 0),
-      );
-      const card = changedPlayer?.discards.at(-1);
-      if (changedPlayer && card) {
-        setPlayedCard({
-          card,
-          playerName: changedPlayer.id === view.selfPlayerId ? "あなた" : changedPlayer.nickname,
-          turn: view.turnNumber,
-        });
-        if (playedCardTimer.current) window.clearTimeout(playedCardTimer.current);
-        playedCardTimer.current = window.setTimeout(
-          () => setPlayedCard(null),
-          PLAYED_CARD_VISIBLE_MS,
-        );
-      }
+    return () => window.clearTimeout(timer);
+  }, [activePresentation]);
+  useEffect(() => {
+    if (view.phase !== "FINISHED") {
+      setShowResultOverlay(false);
+      return;
     }
-    discardCounts.current = nextCounts;
-  }, [view.players, view.selfPlayerId, view.turnNumber]);
+    if (presentationQueue.length > 0) {
+      setShowResultOverlay(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setShowResultOverlay(true), 450);
+    return () => window.clearTimeout(timer);
+  }, [presentationQueue.length, view.phase]);
   useEffect(() => {
     if (previousDeckCount.current !== null && view.deckCount < previousDeckCount.current) {
       setDrawAnimationKey((key) => key + 1);
     }
     previousDeckCount.current = view.deckCount;
   }, [view.deckCount]);
-  useEffect(
-    () => () => {
-      if (playedCardTimer.current) window.clearTimeout(playedCardTimer.current);
-      if (effectNoticeTimer.current) window.clearTimeout(effectNoticeTimer.current);
-    },
-    [],
-  );
 
   const submit = () => {
     const command = commandForSelection(view, selection);
@@ -304,9 +410,61 @@ export function GameBoard({
       )}
 
       {effectNotice && (
-        <div className="effect-notice" key={effectNotice.id} role="status" aria-live="polite">
-          <small>EFFECT RESOLVED</small>
-          <strong>{effectNotice.message}</strong>
+        <div
+          className={`effect-notice ${
+            effectNotice.sourceCard ? `effect-${effectNotice.sourceCard.type.toLowerCase()}` : ""
+          } ${effectNotice.duel ? "is-duel" : ""}`}
+          key={effectNotice.id}
+          role="status"
+          aria-live="polite"
+        >
+          <span className="effect-wave effect-wave-a" aria-hidden="true" />
+          <span className="effect-wave effect-wave-b" aria-hidden="true" />
+          {effectNotice.sourceCard && (
+            <div className="effect-sigil" aria-hidden="true">
+              <CardSigil type={effectNotice.sourceCard.type} />
+            </div>
+          )}
+          <div className="effect-notice-copy">
+            <small>
+              {effectNotice.sourceCard
+                ? `${CARD_BY_RANK[effectNotice.sourceCard.rank]?.effectName} · 効果結果`
+                : "EFFECT RESOLVED"}
+            </small>
+            {effectNotice.duel ? (
+              <>
+                <strong className="duel-title">貴族の対決</strong>
+                <div className="duel-contestants" aria-label={effectNotice.message}>
+                  {effectNotice.duel.contestants.map((name, index) => {
+                    const isWinner = effectNotice.duel?.winner === name;
+                    return (
+                      <span
+                        className={
+                          effectNotice.duel?.winner
+                            ? isWinner
+                              ? "is-winner"
+                              : "is-loser"
+                            : "is-draw"
+                        }
+                        key={`${name}-${index}`}
+                      >
+                        <b>{name}</b>
+                        <em>{effectNotice.duel?.winner ? (isWinner ? "WIN" : "LOSE") : "DRAW"}</em>
+                      </span>
+                    );
+                  })}
+                  <i>VS</i>
+                </div>
+                <p className="duel-verdict">
+                  {effectNotice.duel.winner
+                    ? `${effectNotice.duel.winner}の勝利`
+                    : "同値のため両者脱落"}
+                </p>
+              </>
+            ) : (
+              <strong>{effectNotice.message}</strong>
+            )}
+          </div>
         </div>
       )}
 
@@ -350,10 +508,16 @@ export function GameBoard({
                     </small>
                   </div>
                   {player.isAlive && <CardBack label="手札 1枚" />}
-                  <div className="mini-discards" aria-label={`${player.nickname}の捨て札`}>
-                    {player.discards.slice(-3).map((card) => (
-                      <GameCard card={card} compact key={card.id} />
-                    ))}
+                  <div
+                    className="mini-discards"
+                    aria-label={`${player.nickname}が場に出したカード`}
+                  >
+                    <span>場札 {player.discards.length}枚</span>
+                    <div>
+                      {player.discards.map((card, index) => (
+                        <GameCard card={card} compact motionIndex={index} key={card.id} />
+                      ))}
+                    </div>
                   </div>
                   {player.isProtected && <span className="shield-badge">守護</span>}
                   {isTargetable && (
@@ -430,6 +594,16 @@ export function GameBoard({
                 <strong>{self?.nickname}</strong>
               </div>
               <span>{self?.isProtected ? "◇ 守護中" : "生存"}</span>
+            </div>
+
+            <div className="self-field-history" aria-label="あなたが場に出したカード">
+              <span>YOUR FIELD · 場札 {self?.discards.length ?? 0}枚</span>
+              <div>
+                {self?.discards.map((card, index) => (
+                  <GameCard card={card} compact motionIndex={index} key={card.id} />
+                ))}
+                {self?.discards.length === 0 && <small>カードを出すとここに残ります</small>}
+              </div>
             </div>
 
             {view.phase === "WAITING_FOR_SAGE_CHOICE" && isSelfTurn ? (
@@ -616,7 +790,7 @@ export function GameBoard({
         </aside>
       </div>
 
-      {view.phase === "FINISHED" && (
+      {view.phase === "FINISHED" && showResultOverlay && (
         <div
           className={`result-overlay ${
             view.winnerIds.includes(view.selfPlayerId) ? "is-victory" : "is-defeat"
@@ -643,15 +817,25 @@ export function GameBoard({
             <div className="result-players">
               {view.players.map((player) => (
                 <div key={player.id}>
-                  <span>{player.nickname}</span>
-                  <b>
-                    {view.winnerIds.includes(player.id)
-                      ? "WIN"
-                      : player.isAlive
-                        ? "SURVIVED"
-                        : "OUT"}
-                  </b>
-                  <small>{player.eliminatedReason ?? "最終比較"}</small>
+                  <div className="result-player-summary">
+                    <span>{player.nickname}</span>
+                    <b>
+                      {view.winnerIds.includes(player.id)
+                        ? "WIN"
+                        : player.isAlive
+                          ? "SURVIVED"
+                          : "OUT"}
+                    </b>
+                    <small>{player.eliminatedReason ?? "最終比較"}</small>
+                  </div>
+                  <div
+                    className="result-field-history"
+                    aria-label={`${player.nickname}が場に出したカード`}
+                  >
+                    {player.discards.map((card) => (
+                      <GameCard card={card} compact key={card.id} />
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>

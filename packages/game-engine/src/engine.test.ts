@@ -241,6 +241,9 @@ describe("card effects", () => {
     const winResult = play(win, win.players[0]!.hand[0]!.id);
     expect(winResult.players[1]!.isAlive).toBe(false);
     expect(winResult.winnerIds).toEqual(["p1"]);
+    expect(
+      winResult.logs.some((entry) => entry.message === "貴族の対決：アオイ VS レン — アオイ WIN"),
+    ).toBe(true);
 
     const tie = fixture();
     tie.players[0]!.hand = [card("NOBLE", "play"), card("SAGE", "keep")];
@@ -248,6 +251,9 @@ describe("card effects", () => {
     const tieResult = play(tie, tie.players[0]!.hand[0]!.id);
     expect(tieResult.players.every((player) => !player.isAlive)).toBe(true);
     expect(tieResult.resultType).toBe("DRAW");
+    expect(
+      tieResult.logs.some((entry) => entry.message === "貴族の対決：アオイ VS レン — DRAW"),
+    ).toBe(true);
   });
 
   it("keeps death choices hidden and reincarnates a discarded hero", () => {
