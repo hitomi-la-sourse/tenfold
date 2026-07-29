@@ -1,15 +1,16 @@
 # TENFOLD：王国の心理戦
 
 10種類・18枚のカードで遊ぶ、2〜4人用の推理・心理戦型ブラウザゲームです。  
-CPU対戦と、Socket.IOを使ったオンライン対戦（合言葉ルーム／2人クイック対戦）に対応します。無料・登録不要です。
+CPU対戦と、サーバー同期式のオンライン対戦（合言葉ルーム）に対応します。無料・登録不要です。
+
+公開版: <https://tenfold-card-game.leafy-knoll-5739.chatgpt.site>
 
 > TENFOLDは独自の名称、文章、カード紋章、画面デザインで制作したオリジナル作品です。他社の公式画像、ロゴ、物語、文章、音楽、カードデザインは使用していません。特定作品の公式版、公認版、提携版ではありません。
 
 ## 主な機能
 
 - 人間1人＋CPU 1〜3人。CPUは「かんたん」「ふつう」から選択
-- 2〜4人の合言葉ルーム、空席へのCPU追加
-- 2人用クイック対戦、待機キャンセル、CPU戦への切り替え案内
+- 異なるネットワークから参加できる2〜4人の合言葉ルーム
 - 全10種類・18枚のカード効果、転生札、守護、賢者、少年の特殊処理
 - プレイヤー別の秘匿ビュー、非公開情報の漏えい防止テスト
 - 60秒の再接続猶予と、期限後のCPU自動交代
@@ -18,12 +19,13 @@ CPU対戦と、Socket.IOを使ったオンライン対戦（合言葉ルーム�
 
 ## 対応ブラウザ
 
-現在の安定版および1つ前のメジャーバージョンの Chrome、Edge、Firefox、Safari を想定しています。WebSocket、Web Crypto API、`localStorage` が必要です。
+現在の安定版および1つ前のメジャーバージョンの Chrome、Edge、Firefox、Safari を想定しています。Web Crypto API、`fetch`、`localStorage` が必要です。
 
 ## 技術構成
 
 - Web: Next.js（App Router）、React、TypeScript strict、Tailwind CSS
-- Server: Fastify、Socket.IO、Zod、pino、helmet、CORS、レート制限
+- Public Server: Cloudflare Worker互換API、D1、Zod
+- Self-host Server: Fastify、Socket.IO、helmet、CORS、レート制限
 - Core: 純粋TypeScriptのゲームエンジン、差し替え可能な安全な乱数源
 - Test: Vitest、Playwright
 - Repository: pnpm workspace
@@ -83,17 +85,16 @@ pnpm build       # Webとサーバーの本番ビルド
 
 ## オンライン対戦
 
-ゲームの完全な状態はサーバーだけが保持します。クライアントはカードIDや対象などの「希望する操作」だけを送り、サーバーが手番・カード・対象・二重送信を検証します。
+ゲームの完全な状態はD1上のサーバールームだけが保持します。クライアントはカードIDや対象などの「希望する操作」だけをHTTPSで送り、サーバーが手番・カード・対象・二重送信を検証します。
 
 各プレイヤーへは `createPlayerView(state, viewerPlayerId)` で生成した専用ビューだけを送ります。通常状態で他人の手札、山札順、転生札の中身、死神の伏せ札、他人の占師結果は送信しません。
 
 ### 再接続
 
 - 推測困難な再接続トークンを端末の `localStorage` に保存
-- 切断から60秒間は席を保持
 - 同じトークンで本人用の最新状態へ復帰
-- 60秒を超えるとCPUが引き継ぎ、元プレイヤーは復帰不可
-- トークンはURL、公開ログ、サーバーログへ出しません
+- ルーム状態は最終操作から24時間保持
+- トークンはURLや公開ログへ出しません
 
 ## 環境変数
 
@@ -111,13 +112,7 @@ pnpm build       # Webとサーバーの本番ビルド
 
 ## デプロイ
 
-Webと常時接続可能なゲームサーバーを分離して配備します。詳しくは [docs/deployment.md](docs/deployment.md) を参照してください。
-
-- Web: VercelなどのNext.js対応環境
-- Server: Railway、Render、Fly.ioなど、WebSocketを維持できるNode.js環境
-- 1サービス構成: `docker-compose.yml` を基にWeb・Serverを同じ基盤へ配置可能
-
-本番では `NEXT_PUBLIC_GAME_SERVER_URL` をHTTPSサイトから到達できる `https://` のURLにし、Socket.IOがWSSへ昇格できるようにします。`WEB_ORIGIN` は公開Webの正確なオリジンだけを指定してください。
+公開版はSites上でWeb、API、D1を一体配備します。詳しくは [docs/deployment.md](docs/deployment.md) を参照してください。`apps/server` はDockerでセルフホストする場合の代替構成として残しています。
 
 ## セキュリティ方針
 
@@ -125,8 +120,7 @@ Webと常時接続可能なゲームサーバーを分離して配備します�
 
 ## 既知の制限
 
-- MVPはインメモリの単一サーバー構成です。再起動で進行中ルームは消えます。
-- 複数サーバー間の水平スケーリング、観戦、チャット、フレンド、ランキングはありません。
+- 観戦、チャット、フレンド、ランキングはありません。
 - オンライン再戦は、接続中の誰かが再戦を押すと同じ参加者ですぐ開始します。投票制は今後の拡張です。
 - CPU「ふつう」は取得した透視情報と公開捨て札を利用しますが、完全探索AIではありません。
 

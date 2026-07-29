@@ -29,12 +29,12 @@ export default function PlayPage() {
           </div>
           <b aria-hidden="true">→</b>
         </Link>
-        <Link className="mode-card" href="/room/join?quick=1">
+        <Link className="mode-card" href="/room/join">
           <span className="mode-number">03</span>
           <div>
-            <small>QUICK MATCH</small>
-            <h2>クイック対戦</h2>
-            <p>相手が見つかり次第、自動で2人対戦を始めます。</p>
+            <small>JOIN TABLE</small>
+            <h2>ルームへ参加</h2>
+            <p>受け取った招待リンク、または6文字のコードから参加します。</p>
           </div>
           <b aria-hidden="true">→</b>
         </Link>

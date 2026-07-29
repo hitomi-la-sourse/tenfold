@@ -4,6 +4,8 @@ import {
   handleImageOptimization,
 } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { handleOnlineApiRequest } from "../lib/online-api-handler";
+import type { OnlineRoomDatabase } from "../lib/online-room-service";
 
 interface AssetFetcher {
   fetch(request: Request): Promise<Response>;
@@ -11,6 +13,7 @@ interface AssetFetcher {
 
 interface Env {
   ASSETS: AssetFetcher;
+  DB: OnlineRoomDatabase;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -28,6 +31,10 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname === "/api/online") {
+      return handleOnlineApiRequest(request, env.DB);
+    }
 
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];

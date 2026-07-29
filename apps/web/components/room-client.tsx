@@ -1,37 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { GameCommand } from "@tenfold/game-engine";
 import type { RoomView } from "@tenfold/shared";
 import { GameBoard } from "./game-board";
-import { gameSocket } from "@/lib/socket";
+import {
+  commandOnlineRoom,
+  fetchOnlineRoom,
+  leaveOnlineRoom,
+  rematchOnlineRoom,
+  startOnlineRoom,
+} from "@/lib/online-api";
 import { STORAGE_KEYS } from "@/lib/preferences";
-
-function emitGameCommand(command: GameCommand): void {
-  const socket = gameSocket();
-  const payload = { commandId: command.commandId };
-  switch (command.type) {
-    case "PLAY_CARD":
-      socket.emit("game:play-card", { ...payload, cardId: command.cardId });
-      break;
-    case "SELECT_TARGET":
-      socket.emit("game:select-target", { ...payload, targetPlayerId: command.targetPlayerId });
-      break;
-    case "SELECT_GUESS":
-      socket.emit("game:select-guess", { ...payload, guessRank: command.guessRank });
-      break;
-    case "SELECT_PUBLIC_EXECUTION_CARD":
-      socket.emit("game:select-public-execution-card", { ...payload, cardId: command.cardId });
-      break;
-    case "SELECT_DEATH_CARD":
-      socket.emit("game:select-death-card", { ...payload, position: command.position });
-      break;
-    case "SELECT_SAGE_CARD":
-      socket.emit("game:select-sage-card", { ...payload, cardId: command.cardId });
-      break;
-  }
-}
 
 export function RoomClient({ code }: { code: string }) {
   const router = useRouter();
@@ -41,54 +22,69 @@ export function RoomClient({ code }: { code: string }) {
     "RECONNECTING",
   );
   const [copied, setCopied] = useState(false);
-  const socket = useMemo(() => gameSocket(), []);
+  const tokenRef = useRef("");
+  const roomRef = useRef<RoomView | null>(null);
+
+  const acceptRoom = (next: RoomView) => {
+    roomRef.current = next;
+    setRoom(next);
+    setConnection("CONNECTED");
+    setError("");
+  };
 
   useEffect(() => {
-    const onRoom = (next: RoomView) => {
-      if (next.code !== code) return;
-      setRoom(next);
-      setConnection("CONNECTED");
-      setError("");
-    };
-    const onError = (data: { message: string }) => setError(data.message);
-    const onConnect = () => {
-      setConnection("CONNECTED");
-      const token = localStorage.getItem(STORAGE_KEYS.reconnect(code));
-      if (token) {
-        socket.emit("player:reconnect", { code, token }, (response) => {
-          if (
-            typeof response === "object" &&
-            response &&
-            "ok" in response &&
-            response.ok === false &&
-            "message" in response
-          ) {
-            setError(String(response.message));
-          }
-        });
+    const token = localStorage.getItem(STORAGE_KEYS.reconnect(code)) ?? "";
+    tokenRef.current = token;
+    if (!token) {
+      setConnection("DISCONNECTED");
+      setError("参加情報がありません。招待リンクからルームへ入り直してください。");
+      return;
+    }
+
+    let active = true;
+    let timer = 0;
+    const poll = async () => {
+      try {
+        const next = await fetchOnlineRoom(code, token);
+        if (!active) return;
+        acceptRoom(next);
+      } catch (cause) {
+        if (!active) return;
+        setConnection("RECONNECTING");
+        setError(cause instanceof Error ? cause.message : "ルームへ再接続しています");
+      }
+      if (active) {
+        timer = window.setTimeout(poll, roomRef.current?.status === "LOBBY" ? 900 : 1200);
       }
     };
-    const onDisconnect = () => setConnection("RECONNECTING");
-    socket.on("room:state", onRoom);
-    socket.on("room:error", onError);
-    socket.on("game:error", onError);
-    socket.on("connect", onConnect);
-    socket.on("disconnect", onDisconnect);
-    if (socket.connected) onConnect();
+    void poll();
     return () => {
-      socket.off("room:state", onRoom);
-      socket.off("room:error", onError);
-      socket.off("game:error", onError);
-      socket.off("connect", onConnect);
-      socket.off("disconnect", onDisconnect);
+      active = false;
+      window.clearTimeout(timer);
     };
-  }, [code, socket]);
+  }, [code]);
+
+  const runRoomAction = async (action: () => Promise<RoomView>) => {
+    try {
+      setError("");
+      acceptRoom(await action());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "操作を完了できませんでした");
+    }
+  };
 
   const self = room?.players.find((player) => player.id === room.selfPlayerId);
 
-  const leave = () => {
-    socket.emit("room:leave", { code });
+  const leave = async () => {
+    const token = tokenRef.current;
     localStorage.removeItem(STORAGE_KEYS.reconnect(code));
+    if (token) {
+      try {
+        await leaveOnlineRoom(code, token);
+      } catch {
+        // 退出後の画面遷移を優先します。
+      }
+    }
     router.push("/play");
   };
 
@@ -96,12 +92,14 @@ export function RoomClient({ code }: { code: string }) {
     return (
       <GameBoard
         view={room.game}
-        onCommand={emitGameCommand}
-        onRematch={() => socket.emit("game:request-rematch", { code })}
-        onExit={leave}
+        onCommand={(command: GameCommand) =>
+          void runRoomAction(() => commandOnlineRoom(code, tokenRef.current, command))
+        }
+        onRematch={() => void runRoomAction(() => rematchOnlineRoom(code, tokenRef.current))}
+        onExit={() => void leave()}
         connectionLabel={
           connection === "CONNECTED"
-            ? "オンライン"
+            ? "サーバー同期"
             : connection === "RECONNECTING"
               ? "再接続しています"
               : "通信が切断されました"
@@ -120,7 +118,7 @@ export function RoomClient({ code }: { code: string }) {
           <p>2〜4人が揃ったら、主催者が対戦を始めます。</p>
         </div>
         <span className={`connection-badge ${connection !== "CONNECTED" ? "warning" : ""}`}>
-          <i /> {connection === "CONNECTED" ? "接続済み" : "再接続しています"}
+          <i /> {connection === "CONNECTED" ? "接続済み" : "接続しています"}
         </span>
       </div>
 
@@ -138,14 +136,15 @@ export function RoomClient({ code }: { code: string }) {
             className="button button-secondary"
             type="button"
             onClick={async () => {
-              await navigator.clipboard.writeText(code);
+              const inviteUrl = `${window.location.origin}/room/join?code=${code}`;
+              await navigator.clipboard.writeText(inviteUrl);
               setCopied(true);
               window.setTimeout(() => setCopied(false), 1600);
             }}
           >
-            {copied ? "コピーしました" : "コードをコピー"}
+            {copied ? "コピーしました" : "招待リンクをコピー"}
           </button>
-          <p>この6文字を一緒に遊ぶ人へ共有してください。</p>
+          <p>リンクまたは6文字のコードを一緒に遊ぶ人へ共有してください。</p>
         </div>
 
         <div className="seats-panel">
@@ -159,25 +158,14 @@ export function RoomClient({ code }: { code: string }) {
               return player ? (
                 <div className="seat-row" key={player.id}>
                   <span className="seat-number">0{index + 1}</span>
-                  <div className="player-avatar">
-                    {player.isBot ? "CPU" : player.nickname.slice(0, 1)}
-                  </div>
+                  <div className="player-avatar">{player.nickname.slice(0, 1)}</div>
                   <div>
                     <strong>{player.nickname}</strong>
                     <small>
-                      {player.isHost ? "主催者" : player.isBot ? "CPUプレイヤー" : "参加者"} ·{" "}
-                      {player.connectionStatus === "CONNECTED" ? "接続中" : "切断中"}
+                      {player.isHost ? "主催者" : "参加者"} ·{" "}
+                      {player.connectionStatus === "CONNECTED" ? "参加中" : "退出済み"}
                     </small>
                   </div>
-                  {self?.isHost && player.isBot && (
-                    <button
-                      className="text-button"
-                      type="button"
-                      onClick={() => socket.emit("room:remove-bot", { code, playerId: player.id })}
-                    >
-                      削除
-                    </button>
-                  )}
                 </div>
               ) : (
                 <div className="seat-row empty" key={`empty-${index}`}>
@@ -192,28 +180,21 @@ export function RoomClient({ code }: { code: string }) {
             })}
           </div>
 
-          {self?.isHost && (
+          {self?.isHost ? (
             <div className="lobby-controls">
-              <button
-                className="button button-secondary"
-                type="button"
-                disabled={(room?.players.length ?? 0) >= 4}
-                onClick={() => socket.emit("room:add-bot", { code, level: "NORMAL" })}
-              >
-                CPUを追加
-              </button>
               <button
                 className="button button-primary"
                 type="button"
                 disabled={(room?.players.length ?? 0) < 2}
-                onClick={() => socket.emit("room:start", { code })}
+                onClick={() => void runRoomAction(() => startOnlineRoom(code, tokenRef.current))}
               >
                 対戦を始める
               </button>
             </div>
+          ) : (
+            <p className="waiting-host">主催者が対戦を始めるのを待っています。</p>
           )}
-          {!self?.isHost && <p className="waiting-host">主催者が対戦を始めるのを待っています。</p>}
-          <button className="text-button leave-link" type="button" onClick={leave}>
+          <button className="text-button leave-link" type="button" onClick={() => void leave()}>
             ルームを退出
           </button>
         </div>

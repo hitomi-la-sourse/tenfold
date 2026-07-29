@@ -1,14 +1,13 @@
 # デプロイ手順
 
-## 推奨構成
+## 公開版
 
-WebはVercelなどのNext.js対応基盤、ゲームサーバーはRailway、Render、Fly.ioなどの常時接続可能なNode.js基盤へ分離します。
+Sites上でNext.js UI、Cloudflare Worker互換API、D1ルームストレージを一体配備します。オンライン対戦はHTTPSの短いポーリングで同期し、P2P、STUN、TURN、WebSocketに依存しません。
 
-1. ゲームサーバーを `Dockerfile.server` で配備し、`/health` が200を返すことを確認
-2. サーバーの公開HTTPS URLをWeb側の `NEXT_PUBLIC_GAME_SERVER_URL` へ設定
-3. Webを `Dockerfile.web` またはVercelで配備
-4. Webの公開オリジンをサーバー側の `WEB_ORIGIN` へ設定して再起動
-5. 2つのブラウザコンテキストでルーム参加とWSS接続を確認
+1. `apps/web/.openai/hosting.json` でD1の論理バインディング `DB` を宣言
+2. `pnpm --filter @tenfold/web db:generate` でマイグレーションを生成
+3. `pnpm --filter @tenfold/web build:sites` で公開用ビルド
+4. Sitesへ保存・配備し、2つの独立したネットワークからルーム参加を確認
 
 ## 本番環境変数
 
@@ -24,7 +23,7 @@ RECONNECT_GRACE_SECONDS=60
 LOG_LEVEL=info
 ```
 
-## Docker Compose
+## セルフホスト版
 
 ローカルで本番相当の2サービスを確認できます。
 
@@ -34,8 +33,10 @@ docker compose up --build
 
 ブラウザから <http://localhost:3000> を開きます。
 
+`apps/server` のSocket.IO版を使う場合は、従来どおりWebSocket対応のNode.js基盤へ配備できます。
+
 ## 注意
 
-- 無料サーバーがスリープすると、初回接続が遅れたり進行中ルームが失われたりします。
-- リバースプロキシでHTTP Upgradeを許可し、WebSocketのidle timeoutを十分長くします。
-- サーバーはインメモリのため、ローリング更新や複数インスタンスはルームを分断します。水平化前にRedis repositoryとSocket.IO Redis adapterを導入してください。
+- 公開版ルームは最終操作から24時間後に期限切れになります。
+- D1更新はバージョン番号による楽観ロックを使い、同時操作を上書きしません。
+- セルフホスト版はインメモリのため、水平化前にRedis repositoryとSocket.IO Redis adapterが必要です。

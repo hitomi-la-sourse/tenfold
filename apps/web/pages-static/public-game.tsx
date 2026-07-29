@@ -1,36 +1,29 @@
 import { useState } from "react";
 import { CpuGame } from "../components/cpu-game";
-import { OnlinePeerGame } from "./online-peer-game";
 
-type GameMode = "MENU" | "CPU" | "ONLINE";
+const ONLINE_GAME_URL = "https://tenfold-card-game.leafy-knoll-5739.chatgpt.site/play";
 
 export function PublicGame() {
-  const hasInvite = new URLSearchParams(window.location.search).has("room");
-  const [mode, setMode] = useState<GameMode>(hasInvite ? "ONLINE" : "MENU");
+  const [showCpuGame, setShowCpuGame] = useState(false);
 
-  if (mode === "CPU") return <CpuGame />;
-  if (mode === "ONLINE") return <OnlinePeerGame onExit={() => setMode("MENU")} />;
+  if (showCpuGame) return <CpuGame />;
 
   return (
     <section className="page-shell setup-shell">
       <div className="setup-intro">
         <p className="eyebrow">CHOOSE YOUR TABLE</p>
         <h1>読み合う相手を、選ぶ。</h1>
-        <p>すぐに遊べるCPU戦と、招待リンクでつながるオンライン対戦を選べます。</p>
+        <p>すぐに遊べるCPU戦と、離れた相手と遊べるオンライン対戦を選べます。</p>
       </div>
       <div className="setup-card">
-        <button
-          className="button button-primary wide-button"
-          type="button"
-          onClick={() => setMode("ONLINE")}
-        >
+        <a className="button button-primary wide-button" href={ONLINE_GAME_URL}>
           オンライン対戦 <span aria-hidden="true">→</span>
-        </button>
-        <p className="waiting-host">2〜4人・無料・登録不要</p>
+        </a>
+        <p className="waiting-host">2〜4人・別ネットワーク対応・登録不要</p>
         <button
           className="button button-secondary wide-button"
           type="button"
-          onClick={() => setMode("CPU")}
+          onClick={() => setShowCpuGame(true)}
         >
           CPU対戦
         </button>

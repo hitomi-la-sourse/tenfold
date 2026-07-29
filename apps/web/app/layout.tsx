@@ -3,7 +3,9 @@ import Link from "next/link";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ?? "https://tenfold-card-game.leafy-knoll-5739.chatgpt.site",
+  ),
   title: {
     default: "TENFOLD｜王国の心理戦",
     template: "%s｜TENFOLD",
