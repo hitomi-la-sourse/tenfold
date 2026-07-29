@@ -1,0 +1,11 @@
+node_modules
+**/node_modules
+.next
+**/.next
+dist
+**/dist
+coverage
+playwright-report
+test-results
+pnpm-lock.yaml
+apps/web/public/og.png
