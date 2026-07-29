@@ -33,6 +33,16 @@ export interface CardInstance {
   rank: number;
 }
 
+export interface NobleDuelResolution {
+  id: string;
+  turn: number;
+  actorId: string;
+  targetId: string;
+  actorCard: CardInstance;
+  targetCard: CardInstance;
+  winnerId: string | null;
+}
+
 export const nicknameSchema = z
   .string()
   .trim()
@@ -121,6 +131,7 @@ export interface PlayerGameView {
   privateSageCandidates: CardInstance[];
   privatePeek: { playerId: string; card: CardInstance } | null;
   privateDeathCards: CardInstance[];
+  lastNobleDuel: NobleDuelResolution | null;
   pendingPublic:
     | { kind: "TARGET"; effect: string }
     | { kind: "GUESS"; targetPlayerId: string }

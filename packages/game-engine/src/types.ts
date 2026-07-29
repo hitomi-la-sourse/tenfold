@@ -1,4 +1,10 @@
-import type { BotLevel, CardInstance, CardType, ConnectionStatus } from "@tenfold/shared";
+import type {
+  BotLevel,
+  CardInstance,
+  CardType,
+  ConnectionStatus,
+  NobleDuelResolution,
+} from "@tenfold/shared";
 
 export type GamePhase =
   | "TURN_START"
@@ -78,6 +84,7 @@ export interface GameState {
   turnNumber: number;
   boyPlayedCount: number;
   pendingAction: PendingAction | null;
+  lastNobleDuel: NobleDuelResolution | null;
   winnerIds: string[];
   resultType: "WIN" | "DRAW" | null;
   logs: GameLogEntry[];

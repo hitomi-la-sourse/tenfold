@@ -1,5 +1,5 @@
 import type { CardInstance, PlayerGameView } from "@tenfold/shared";
-import { CARD_BY_TYPE, createCardDeck } from "./cards";
+import { CARD_BY_RANK, CARD_BY_TYPE, createCardDeck } from "./cards";
 import { CryptoRandomSource, shuffle } from "./random";
 import type {
   ApplyCommandResult,
@@ -204,6 +204,7 @@ export function createGame(
     turnNumber: 1,
     boyPlayedCount: 0,
     pendingAction: null,
+    lastNobleDuel: null,
     winnerIds: [],
     resultType: null,
     logs: [],
@@ -374,17 +375,33 @@ function selectTarget(
     return;
   }
   if (pending.effect === "NOBLE") {
-    const actorRank = actor.hand[0]?.rank ?? -1;
-    const targetRank = target.hand[0]?.rank ?? -1;
-    if (actorRank === targetRank) {
+    const actorCard = actor.hand[0];
+    const targetCard = target.hand[0];
+    if (!actorCard || !targetCard) {
+      throw new GameRuleError("貴族の対決に必要な手札がありません", "NOBLE_FAILED");
+    }
+    const isDraw = actorCard.rank === targetCard.rank;
+    const loser = isDraw ? null : actorCard.rank < targetCard.rank ? actor : target;
+    const winner = loser ? (loser.id === actor.id ? target : actor) : null;
+    state.lastNobleDuel = {
+      id: `noble-${state.turnNumber}-${pending.sourceCardId}`,
+      turn: state.turnNumber,
+      actorId: actor.id,
+      targetId: target.id,
+      actorCard,
+      targetCard,
+      winnerId: winner?.id ?? null,
+    };
+    if (isDraw) {
       addLog(state, `貴族の対決：${actor.nickname} VS ${target.nickname} — DRAW`);
       eliminatePlayers(state, [
         { playerId: actor.id, reason: "対決が同値でした" },
         { playerId: target.id, reason: "対決が同値でした" },
       ]);
     } else {
-      const loser = actorRank < targetRank ? actor : target;
-      const winner = loser.id === actor.id ? target : actor;
+      if (!loser || !winner) {
+        throw new GameRuleError("貴族の勝敗を決定できませんでした", "NOBLE_FAILED");
+      }
       addLog(state, `貴族の対決：${actor.nickname} VS ${target.nickname} — ${winner.nickname} WIN`);
       eliminatePlayers(state, [{ playerId: loser.id, reason: "対決に敗れました" }]);
     }
@@ -450,9 +467,10 @@ function selectGuess(
   const actor = requirePlayer(state, command.playerId);
   const target = requirePlayer(state, pending.targetPlayerId);
   const matched = target.hand[0]?.rank === command.guessRank;
+  const guessedCardName = CARD_BY_RANK[command.guessRank]?.displayName ?? "不明";
   addLog(
     state,
-    `${actor.nickname}が${target.nickname}の手札をランク${command.guessRank}と宣言し、${matched ? "的中しました" : "外れました"}`,
+    `${actor.nickname}が${target.nickname}の手札をランク${command.guessRank}「${guessedCardName}」と宣言し、${matched ? "的中しました" : "外れました"}`,
   );
   if (matched) {
     const discarded = target.hand.shift();
@@ -653,6 +671,7 @@ export function createPlayerView(state: GameState, viewerPlayerId: string): Play
     privatePeek: viewer.privatePeek,
     privateDeathCards:
       pending?.kind === "DEATH" && pending.targetPlayerId === viewerPlayerId ? pending.cards : [],
+    lastNobleDuel: state.lastNobleDuel ?? null,
     pendingPublic: publicPending,
     winnerIds: state.winnerIds,
     resultType: state.resultType,

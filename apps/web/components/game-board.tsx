@@ -37,6 +37,7 @@ interface PlayedCardMoment {
 interface DuelOutcome {
   contestants: [string, string];
   winner: string | null;
+  cards: [CardInstance, CardInstance] | null;
 }
 
 type PresentationEvent =
@@ -95,15 +96,17 @@ function playedCardFromLog(
   return null;
 }
 
-function parseDuelOutcome(message: string): DuelOutcome | null {
+function parseDuelOutcome(view: PlayerGameView, message: string): DuelOutcome | null {
   const prefix = "貴族の対決：";
   if (!message.startsWith(prefix)) return null;
   const [matchup, result] = message.slice(prefix.length).split(" — ");
   const contestants = matchup?.split(" VS ");
   if (!result || contestants?.length !== 2) return null;
+  const duel = view.lastNobleDuel;
   return {
     contestants: [contestants[0]!, contestants[1]!],
     winner: result === "DRAW" ? null : result.endsWith(" WIN") ? result.slice(0, -4) : null,
+    cards: duel ? [duel.actorCard, duel.targetCard] : null,
   };
 }
 
@@ -254,7 +257,7 @@ export function GameBoard({
         id: `effect-${highlighted.id}`,
         message: highlighted.message,
         sourceCard: activeSourceCard.current?.card ?? null,
-        duel: parseDuelOutcome(highlighted.message),
+        duel: parseDuelOutcome(view, highlighted.message),
       });
     }
 
@@ -451,6 +454,15 @@ export function GameBoard({
                         key={`${name}-${index}`}
                       >
                         <b>{name}</b>
+                        {effectNotice.duel?.cards?.[index] && (
+                          <GameCard card={effectNotice.duel.cards[index]!} />
+                        )}
+                        {effectNotice.duel?.cards?.[index] && (
+                          <small className="duel-card-label">
+                            ランク{effectNotice.duel.cards[index]!.rank}「
+                            {CARD_BY_RANK[effectNotice.duel.cards[index]!.rank]!.displayName}」
+                          </small>
+                        )}
                         <em>{effectNotice.duel?.winner ? (isWinner ? "WIN" : "LOSE") : "DRAW"}</em>
                       </span>
                     );
@@ -745,14 +757,15 @@ export function GameBoard({
               <div className="private-note" role="status">
                 透視結果：
                 {view.players.find((player) => player.id === view.privatePeek?.playerId)?.nickname}
-                の手札は「{CARD_BY_RANK[view.privatePeek.card.rank]!.displayName}」
+                の手札は ランク{view.privatePeek.card.rank}「
+                {CARD_BY_RANK[view.privatePeek.card.rank]!.displayName}」
               </div>
             )}
             {view.privateDeathCards.length > 0 && (
               <div className="private-note" role="status">
                 あなたの伏せ札：
                 {view.privateDeathCards
-                  .map((card) => CARD_BY_RANK[card.rank]!.displayName)
+                  .map((card) => `ランク${card.rank}「${CARD_BY_RANK[card.rank]!.displayName}」`)
                   .join("／")}
               </div>
             )}

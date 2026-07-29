@@ -244,6 +244,13 @@ describe("card effects", () => {
     expect(
       winResult.logs.some((entry) => entry.message === "貴族の対決：アオイ VS レン — アオイ WIN"),
     ).toBe(true);
+    expect(createPlayerView(winResult, "p1").lastNobleDuel).toMatchObject({
+      actorId: "p1",
+      targetId: "p2",
+      actorCard: { type: "EMPEROR", rank: 9 },
+      targetCard: { type: "BOY", rank: 1 },
+      winnerId: "p1",
+    });
 
     const tie = fixture();
     tie.players[0]!.hand = [card("NOBLE", "play"), card("SAGE", "keep")];
@@ -254,6 +261,11 @@ describe("card effects", () => {
     expect(
       tieResult.logs.some((entry) => entry.message === "貴族の対決：アオイ VS レン — DRAW"),
     ).toBe(true);
+    expect(createPlayerView(tieResult, "p2").lastNobleDuel).toMatchObject({
+      actorCard: { type: "SAGE", rank: 7 },
+      targetCard: { type: "SAGE", rank: 7 },
+      winnerId: null,
+    });
   });
 
   it("keeps death choices hidden and reincarnates a discarded hero", () => {
@@ -310,6 +322,7 @@ describe("card effects", () => {
       guessRank: 8,
     });
     expect(miss.players[1]!.isAlive).toBe(true);
+    expect(miss.logs.some((entry) => entry.message.includes("ランク8「精霊」"))).toBe(true);
 
     const hitState = play(fixture(), "test-SOLDIER-play");
     const hit = run(hitState, {
@@ -319,6 +332,7 @@ describe("card effects", () => {
       guessRank: 7,
     });
     expect(hit.players[1]!.isAlive).toBe(false);
+    expect(hit.logs.some((entry) => entry.message.includes("ランク7「賢者」"))).toBe(true);
 
     const heroState = fixture();
     heroState.players[1]!.hand = [card("HERO", "target")];
