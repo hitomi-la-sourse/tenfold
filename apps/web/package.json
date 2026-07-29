@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:pages": "vite build --config vite.pages.config.ts",
     "build:sites": "vinext build",
     "start": "next start",
     "typecheck": "tsc --noEmit",

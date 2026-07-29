@@ -6,6 +6,7 @@ export default tseslint.config(
     ignores: [
       "**/.next/**",
       "**/dist/**",
+      "**/dist-pages/**",
       "**/coverage/**",
       "**/playwright-report/**",
       "**/test-results/**",

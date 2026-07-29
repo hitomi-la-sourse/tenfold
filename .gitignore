@@ -2,6 +2,7 @@ node_modules
 .next
 .wrangler
 dist
+dist-pages
 coverage
 playwright-report
 test-results
