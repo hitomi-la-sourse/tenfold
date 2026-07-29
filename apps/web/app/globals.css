@@ -3816,4 +3816,59 @@ button.game-card.is-selected .card-foil {
   .game-screen::before {
     transform: none !important;
   }
+
+  .played-card-stage {
+    animation: reducedPresentationIn 180ms ease-out both !important;
+  }
+
+  .played-card-stage::before,
+  .effect-wave {
+    display: none;
+  }
+
+  .played-card-stage::after {
+    opacity: 1 !important;
+    animation: none !important;
+  }
+
+  .played-card-stage .game-card,
+  .play-side-label,
+  .played-card-label,
+  .effect-sigil,
+  .duel-contestants > span,
+  .duel-contestants > i {
+    opacity: 1 !important;
+    transform: none !important;
+    animation: none !important;
+  }
+
+  .effect-notice {
+    opacity: 1 !important;
+    transform: translate(-50%, -50%) !important;
+    animation: reducedPresentationInCentered 180ms ease-out both !important;
+  }
+
+  .effect-notice::after {
+    display: none;
+  }
+}
+
+@keyframes reducedPresentationIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes reducedPresentationInCentered {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
 }
