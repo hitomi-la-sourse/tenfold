@@ -142,6 +142,14 @@ export function chooseBotCommand(input: BotDecisionInput): GameCommand {
   return randomChoice(legalCommands, random);
 }
 
-export function botThinkDelay(random: BotRandom, disabled = false): number {
-  return disabled ? 0 : 300 + random.int(501);
+export function botThinkDelay(
+  random: BotRandom,
+  phase: PlayerGameView["phase"],
+  disabled = false,
+): number {
+  if (disabled) return 0;
+  if (phase === "WAITING_FOR_PLAY") return 2400 + random.int(601);
+  if (phase === "WAITING_FOR_SAGE_CHOICE") return 1800 + random.int(501);
+  return 2200 + random.int(601);
 }
+

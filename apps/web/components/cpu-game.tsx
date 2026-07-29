@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { chooseBotCommand } from "@tenfold/bot";
+import { botThinkDelay, chooseBotCommand } from "@tenfold/bot";
 import {
   applyCommand,
   createGame,
@@ -65,7 +65,7 @@ export function CpuGame() {
           setError(cause instanceof Error ? cause.message : "CPUの操作に失敗しました");
         }
       },
-      380 + random.int(321),
+      botThinkDelay(random, state.phase),
     );
     return () => window.clearTimeout(timer);
   }, [state, level]);
@@ -173,3 +173,4 @@ export function CpuGame() {
     </section>
   );
 }
+

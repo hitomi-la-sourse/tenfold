@@ -28,6 +28,33 @@ interface ExecutionContext {
   passThroughOnException(): void;
 }
 
+const IMAGE_CONTENT_TYPES: Record<string, string> = {
+  ".avif": "image/avif",
+  ".gif": "image/gif",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+};
+
+async function fetchImageAsset(path: string, request: Request, env: Env): Promise<Response> {
+  const assetUrl = new URL(path, request.url);
+  const response = await env.ASSETS.fetch(new Request(assetUrl));
+  const extension = Object.keys(IMAGE_CONTENT_TYPES).find((candidate) =>
+    assetUrl.pathname.toLowerCase().endsWith(candidate),
+  );
+  if (!extension) return response;
+
+  const headers = new Headers(response.headers);
+  headers.set("Content-Type", IMAGE_CONTENT_TYPES[extension]!);
+  headers.set("X-Content-Type-Options", "nosniff");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -41,7 +68,7 @@ const worker = {
       return handleImageOptimization(
         request,
         {
-          fetchAsset: (path) => env.ASSETS.fetch(new Request(new URL(path, request.url))),
+          fetchAsset: (path) => fetchImageAsset(path, request, env),
           transformImage: async (body, { width, format, quality }) => {
             const result = await env.IMAGES.input(body)
               .transform(width > 0 ? { width } : {})
@@ -58,3 +85,4 @@ const worker = {
 };
 
 export default worker;
+

@@ -1,4 +1,4 @@
-import { chooseBotCommand } from "@tenfold/bot";
+import { botThinkDelay, chooseBotCommand } from "@tenfold/bot";
 import {
   applyCommand,
   createGame,
@@ -83,7 +83,7 @@ export class GameService {
         this.botTimers.delete(room.code);
         void this.runBot(room.code);
       },
-      this.botDelayDisabled ? 0 : 300 + this.random.int(501),
+      botThinkDelay(this.random, room.game.phase, this.botDelayDisabled),
     );
     this.botTimers.set(room.code, timer);
   }
@@ -105,3 +105,4 @@ export class GameService {
     await this.command(room, bot.id, command);
   }
 }
+

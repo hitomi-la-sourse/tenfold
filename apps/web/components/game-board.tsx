@@ -32,6 +32,15 @@ interface PlayedCardMoment {
   turn: number;
 }
 
+interface EffectNotice {
+  id: string;
+  message: string;
+}
+
+const TURN_ANNOUNCEMENT_MS = 1800;
+const PLAYED_CARD_VISIBLE_MS = 2600;
+const EFFECT_NOTICE_VISIBLE_MS = 2800;
+
 function commandForSelection(view: PlayerGameView, selection: Selection): GameCommand | null {
   if (!selection) return null;
   const base = { commandId: crypto.randomUUID(), playerId: view.selfPlayerId };
@@ -67,12 +76,15 @@ export function GameBoard({
     turn: number;
   } | null>(null);
   const [playedCard, setPlayedCard] = useState<PlayedCardMoment | null>(null);
+  const [effectNotice, setEffectNotice] = useState<EffectNotice | null>(null);
   const [drawAnimationKey, setDrawAnimationKey] = useState(0);
   const rulesDialog = useRef<HTMLDialogElement>(null);
   const logList = useRef<HTMLOListElement>(null);
   const discardCounts = useRef<Record<string, number> | null>(null);
   const previousDeckCount = useRef<number | null>(null);
+  const previousLogCount = useRef<number | null>(null);
   const playedCardTimer = useRef<number | null>(null);
+  const effectNoticeTimer = useRef<number | null>(null);
   const isSelfTurn = view.currentPlayerId === view.selfPlayerId;
   const self = view.players.find((player) => player.id === view.selfPlayerId);
   const opponents = view.players.filter((player) => player.id !== view.selfPlayerId);
@@ -115,9 +127,27 @@ export function GameBoard({
       self: isSelfTurn,
       turn: view.turnNumber,
     });
-    const timer = window.setTimeout(() => setTurnAnnouncement(null), 1450);
+    const timer = window.setTimeout(() => setTurnAnnouncement(null), TURN_ANNOUNCEMENT_MS);
     return () => window.clearTimeout(timer);
   }, [view.currentPlayerId, view.turnNumber]);
+  useEffect(() => {
+    const previous = previousLogCount.current;
+    previousLogCount.current = view.logs.length;
+    if (previous === null || previous > view.logs.length) return;
+
+    const newEntries = view.logs.slice(previous);
+    const highlighted = [...newEntries]
+      .reverse()
+      .find((entry) => !entry.message.endsWith("の手番です"));
+    if (!highlighted) return;
+
+    setEffectNotice({ id: highlighted.id, message: highlighted.message });
+    if (effectNoticeTimer.current) window.clearTimeout(effectNoticeTimer.current);
+    effectNoticeTimer.current = window.setTimeout(
+      () => setEffectNotice(null),
+      EFFECT_NOTICE_VISIBLE_MS,
+    );
+  }, [view.logs]);
   useEffect(() => {
     const nextCounts = Object.fromEntries(
       view.players.map((player) => [player.id, player.discards.length]),
@@ -135,7 +165,10 @@ export function GameBoard({
           turn: view.turnNumber,
         });
         if (playedCardTimer.current) window.clearTimeout(playedCardTimer.current);
-        playedCardTimer.current = window.setTimeout(() => setPlayedCard(null), 1500);
+        playedCardTimer.current = window.setTimeout(
+          () => setPlayedCard(null),
+          PLAYED_CARD_VISIBLE_MS,
+        );
       }
     }
     discardCounts.current = nextCounts;
@@ -149,6 +182,7 @@ export function GameBoard({
   useEffect(
     () => () => {
       if (playedCardTimer.current) window.clearTimeout(playedCardTimer.current);
+      if (effectNoticeTimer.current) window.clearTimeout(effectNoticeTimer.current);
     },
     [],
   );
@@ -269,6 +303,13 @@ export function GameBoard({
         </div>
       )}
 
+      {effectNotice && (
+        <div className="effect-notice" key={effectNotice.id} role="status" aria-live="polite">
+          <small>EFFECT RESOLVED</small>
+          <strong>{effectNotice.message}</strong>
+        </div>
+      )}
+
       <div className="game-layout">
         <div className="table-zone">
           <div className="table-aurora" aria-hidden="true">
@@ -349,7 +390,11 @@ export function GameBoard({
               <GameCard card={playedCard.card} />
               <div className="played-card-label">
                 <small>{playedCard.playerName}が発動</small>
-                <strong>{CARD_BY_RANK[playedCard.card.rank]?.displayName}</strong>
+                <strong>
+                  {CARD_BY_RANK[playedCard.card.rank]?.displayName} ·{" "}
+                  {CARD_BY_RANK[playedCard.card.rank]?.effectName}
+                </strong>
+                <span>{CARD_BY_RANK[playedCard.card.rank]?.description}</span>
               </div>
             </div>
           )}
@@ -650,3 +695,4 @@ export function GameBoard({
     </section>
   );
 }
+
