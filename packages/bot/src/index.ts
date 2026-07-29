@@ -152,4 +152,3 @@ export function botThinkDelay(
   if (phase === "WAITING_FOR_SAGE_CHOICE") return 1800 + random.int(501);
   return 2200 + random.int(601);
 }
-

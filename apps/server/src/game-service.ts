@@ -105,4 +105,3 @@ export class GameService {
     await this.command(room, bot.id, command);
   }
 }
-

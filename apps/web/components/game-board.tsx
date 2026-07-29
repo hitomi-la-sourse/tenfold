@@ -695,4 +695,3 @@ export function GameBoard({
     </section>
   );
 }
-

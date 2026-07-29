@@ -18,4 +18,3 @@ describe("botThinkDelay", () => {
     expect(botThinkDelay(predictableRandom, "WAITING_FOR_TARGET", true)).toBe(0);
   });
 });
-
