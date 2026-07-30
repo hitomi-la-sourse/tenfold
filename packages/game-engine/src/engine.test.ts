@@ -116,6 +116,26 @@ describe("command validation", () => {
   });
 });
 
+describe("turn progression", () => {
+  it("changes the current player before dealing that player's turn draw", () => {
+    const state = fixture();
+    state.players[0]!.hand = [card("MAIDEN", "play"), card("NOBLE", "keep")];
+    state.players[1]!.hand = [card("SAGE", "waiting")];
+    state.deck = [card("BOY", "next-turn-draw"), card("SEER", "after")];
+
+    const next = play(state, "test-MAIDEN-play");
+
+    expect(next.currentPlayerId).toBe("p2");
+    expect(next.turnNumber).toBe(2);
+    expect(next.players[0]!.hand.map((entry) => entry.id)).toEqual(["test-NOBLE-keep"]);
+    expect(next.players[1]!.hand.map((entry) => entry.id)).toEqual([
+      "test-SAGE-waiting",
+      "test-BOY-next-turn-draw",
+    ]);
+    expect(next.logs.at(-1)?.message).toBe("レンの手番です");
+  });
+});
+
 describe("card effects", () => {
   it("auto-selects the only opponent but keeps the choice with multiple opponents", () => {
     const duel = fixture();

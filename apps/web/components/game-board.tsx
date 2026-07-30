@@ -52,6 +52,16 @@ type PresentationEvent =
       message: string;
       sourceCard: CardInstance | null;
       duel: DuelOutcome | null;
+    }
+  | {
+      kind: "TURN";
+      id: string;
+      moment: TurnMoment;
+    }
+  | {
+      kind: "DRAW";
+      id: string;
+      moment: TurnMoment;
     };
 
 interface EffectNotice {
@@ -61,7 +71,20 @@ interface EffectNotice {
   duel: DuelOutcome | null;
 }
 
-const TURN_ANNOUNCEMENT_MS = 1800;
+interface TurnMoment {
+  playerId: string;
+  playerName: string;
+  isSelf: boolean;
+  turn: number;
+  turnKey: string;
+  selfHand: CardInstance[];
+  deckCount: number;
+  willDraw: boolean;
+  revealAfterTurn: boolean;
+}
+
+const TURN_ANNOUNCEMENT_MS = 1900;
+const DRAW_VISIBLE_MS = 820;
 const PLAYED_CARD_VISIBLE_MS = 3000;
 const EFFECT_NOTICE_VISIBLE_MS = 3600;
 const DUEL_NOTICE_VISIBLE_MS = 4800;
@@ -118,6 +141,56 @@ function isGenericResult(message: string): boolean {
   );
 }
 
+function turnPresentationEvents(
+  view: PlayerGameView,
+  playerId: string,
+  turn: number,
+  eventId: string,
+): PresentationEvent[] {
+  const player = view.players.find((candidate) => candidate.id === playerId);
+  if (!player) return [];
+  const isCurrentTurn = view.currentPlayerId === playerId && view.turnNumber === turn;
+  const willDraw = isCurrentTurn && view.phase === "WAITING_FOR_PLAY";
+  const moment: TurnMoment = {
+    playerId,
+    playerName: player.id === view.selfPlayerId ? "あなた" : player.nickname,
+    isSelf: player.id === view.selfPlayerId,
+    turn,
+    turnKey: `${view.gameId}:${turn}:${playerId}`,
+    selfHand: [...view.selfHand],
+    deckCount: view.deckCount,
+    willDraw,
+    revealAfterTurn: isCurrentTurn,
+  };
+  const events: PresentationEvent[] = [{ kind: "TURN", id: `turn-${eventId}`, moment }];
+  if (willDraw) {
+    events.push({ kind: "DRAW", id: `draw-${eventId}`, moment });
+  }
+  return events;
+}
+
+function initialPresentationEvents(view: PlayerGameView): PresentationEvent[] {
+  if (view.phase === "FINISHED") return [];
+  return turnPresentationEvents(
+    view,
+    view.currentPlayerId,
+    view.turnNumber,
+    `initial-${view.gameId}-${view.turnNumber}`,
+  );
+}
+
+function initialDisplayedHand(view: PlayerGameView): CardInstance[] {
+  const hidesOpeningDraw =
+    view.phase === "WAITING_FOR_PLAY" &&
+    view.currentPlayerId === view.selfPlayerId &&
+    view.selfHand.length > 1;
+  return hidesOpeningDraw ? view.selfHand.slice(0, -1) : [...view.selfHand];
+}
+
+function initialDisplayedDeckCount(view: PlayerGameView): number {
+  return view.phase === "WAITING_FOR_PLAY" ? view.deckCount + 1 : view.deckCount;
+}
+
 function commandForSelection(view: PlayerGameView, selection: Selection): GameCommand | null {
   if (!selection) return null;
   const base = { commandId: crypto.randomUUID(), playerId: view.selfPlayerId };
@@ -147,17 +220,19 @@ export function GameBoard({
 }: GameBoardProps) {
   const [selection, setSelection] = useState<Selection>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [turnAnnouncement, setTurnAnnouncement] = useState<{
-    label: string;
-    self: boolean;
-    turn: number;
-  } | null>(null);
-  const [presentationQueue, setPresentationQueue] = useState<PresentationEvent[]>([]);
+  const [presentationQueue, setPresentationQueue] = useState<PresentationEvent[]>(() =>
+    initialPresentationEvents(view),
+  );
+  const [displayedHand, setDisplayedHand] = useState<CardInstance[]>(() =>
+    initialDisplayedHand(view),
+  );
+  const [displayedDeckCount, setDisplayedDeckCount] = useState(() =>
+    initialDisplayedDeckCount(view),
+  );
+  const [presentedTurnKey, setPresentedTurnKey] = useState<string | null>(null);
   const [showResultOverlay, setShowResultOverlay] = useState(view.phase === "FINISHED");
-  const [drawAnimationKey, setDrawAnimationKey] = useState(0);
   const rulesDialog = useRef<HTMLDialogElement>(null);
   const logList = useRef<HTMLOListElement>(null);
-  const previousDeckCount = useRef<number | null>(null);
   const previousLogCount = useRef<number | null>(null);
   const activeSourceCard = useRef<PlayedCardMoment | null>(null);
   const isSelfTurn = view.currentPlayerId === view.selfPlayerId;
@@ -168,6 +243,14 @@ export function GameBoard({
   const playedCard = activePresentation?.kind === "CARD" ? activePresentation.moment : null;
   const effectNotice: EffectNotice | null =
     activePresentation?.kind === "EFFECT" ? activePresentation : null;
+  const turnAnnouncement = activePresentation?.kind === "TURN" ? activePresentation.moment : null;
+  const drawPresentation = activePresentation?.kind === "DRAW" ? activePresentation.moment : null;
+  const currentTurnKey = `${view.gameId}:${view.turnNumber}:${view.currentPlayerId}`;
+  const canInteract =
+    isSelfTurn &&
+    view.phase !== "FINISHED" &&
+    presentedTurnKey === currentTurnKey &&
+    presentationQueue.length === 0;
 
   useEffect(() => {
     setSoundEnabled(getSoundEnabled());
@@ -192,9 +275,11 @@ export function GameBoard({
   }, [view.phase, view.turnNumber]);
   useEffect(() => {
     previousLogCount.current = null;
-    previousDeckCount.current = null;
     activeSourceCard.current = null;
-    setPresentationQueue([]);
+    setPresentationQueue(initialPresentationEvents(view));
+    setDisplayedHand(initialDisplayedHand(view));
+    setDisplayedDeckCount(initialDisplayedDeckCount(view));
+    setPresentedTurnKey(null);
     setShowResultOverlay(view.phase === "FINISHED");
   }, [view.gameId]);
   useEffect(() => {
@@ -206,26 +291,6 @@ export function GameBoard({
   useEffect(() => {
     if (view.phase === "FINISHED") playEffect("win", soundEnabled);
   }, [view.phase, soundEnabled]);
-  useEffect(() => {
-    if (view.phase === "FINISHED" || presentationQueue.length > 0) {
-      setTurnAnnouncement(null);
-      return;
-    }
-    setTurnAnnouncement({
-      label: isSelfTurn ? "あなたの手番" : `${current?.nickname ?? "相手"}の手番`,
-      self: isSelfTurn,
-      turn: view.turnNumber,
-    });
-    const timer = window.setTimeout(() => setTurnAnnouncement(null), TURN_ANNOUNCEMENT_MS);
-    return () => window.clearTimeout(timer);
-  }, [
-    current?.nickname,
-    isSelfTurn,
-    presentationQueue.length,
-    view.currentPlayerId,
-    view.phase,
-    view.turnNumber,
-  ]);
   useEffect(() => {
     const previous = previousLogCount.current;
     previousLogCount.current = view.logs.length;
@@ -261,24 +326,68 @@ export function GameBoard({
       });
     }
 
+    for (const entry of newEntries.filter((candidate) =>
+      candidate.message.endsWith("の手番です"),
+    )) {
+      const announcedName = entry.message.slice(0, -"の手番です".length);
+      const announcedPlayer =
+        (entry.turn === view.turnNumber
+          ? view.players.find((player) => player.id === view.currentPlayerId)
+          : undefined) ?? view.players.find((player) => player.nickname === announcedName);
+      if (!announcedPlayer) continue;
+      queued.push(...turnPresentationEvents(view, announcedPlayer.id, entry.turn, entry.id));
+    }
+
     if (queued.length > 0) {
       setPresentationQueue((currentQueue) => [...currentQueue, ...queued]);
     }
   }, [view.logs]);
   useEffect(() => {
     if (!activePresentation) return;
-    const duration =
-      activePresentation.kind === "CARD"
-        ? PLAYED_CARD_VISIBLE_MS
-        : activePresentation.duel
-          ? DUEL_NOTICE_VISIBLE_MS
-          : EFFECT_NOTICE_VISIBLE_MS;
-    const timer = window.setTimeout(
-      () => setPresentationQueue((currentQueue) => currentQueue.slice(1)),
-      duration,
-    );
+    const duration = (() => {
+      if (activePresentation.kind === "CARD") return PLAYED_CARD_VISIBLE_MS;
+      if (activePresentation.kind === "EFFECT") {
+        return activePresentation.duel ? DUEL_NOTICE_VISIBLE_MS : EFFECT_NOTICE_VISIBLE_MS;
+      }
+      if (activePresentation.kind === "TURN") return TURN_ANNOUNCEMENT_MS;
+      return DRAW_VISIBLE_MS;
+    })();
+    const timer = window.setTimeout(() => {
+      if (
+        activePresentation.kind === "TURN" &&
+        !activePresentation.moment.willDraw &&
+        activePresentation.moment.revealAfterTurn
+      ) {
+        setDisplayedHand(activePresentation.moment.selfHand);
+        setDisplayedDeckCount(activePresentation.moment.deckCount);
+        setPresentedTurnKey(activePresentation.moment.turnKey);
+      }
+      if (activePresentation.kind === "DRAW") {
+        setDisplayedHand(activePresentation.moment.selfHand);
+        setDisplayedDeckCount(activePresentation.moment.deckCount);
+        setPresentedTurnKey(activePresentation.moment.turnKey);
+      }
+      setPresentationQueue((currentQueue) => currentQueue.slice(1));
+    }, duration);
     return () => window.clearTimeout(timer);
   }, [activePresentation]);
+  useEffect(() => {
+    if (
+      view.phase !== "FINISHED" &&
+      (presentedTurnKey !== currentTurnKey || presentationQueue.length > 0)
+    ) {
+      return;
+    }
+    setDisplayedHand([...view.selfHand]);
+    setDisplayedDeckCount(view.deckCount);
+  }, [
+    currentTurnKey,
+    presentationQueue.length,
+    presentedTurnKey,
+    view.deckCount,
+    view.phase,
+    view.selfHand,
+  ]);
   useEffect(() => {
     if (view.phase !== "FINISHED") {
       setShowResultOverlay(false);
@@ -291,16 +400,12 @@ export function GameBoard({
     const timer = window.setTimeout(() => setShowResultOverlay(true), 450);
     return () => window.clearTimeout(timer);
   }, [presentationQueue.length, view.phase]);
-  useEffect(() => {
-    if (previousDeckCount.current !== null && view.deckCount < previousDeckCount.current) {
-      setDrawAnimationKey((key) => key + 1);
-    }
-    previousDeckCount.current = view.deckCount;
-  }, [view.deckCount]);
-
   const submit = () => {
     const command = commandForSelection(view, selection);
     if (!command) return;
+    if (selection?.kind === "CARD") {
+      setDisplayedHand((currentHand) => currentHand.filter((card) => card.id !== selection.value));
+    }
     playEffect("play", soundEnabled);
     onCommand(command);
     setSelection(null);
@@ -308,6 +413,7 @@ export function GameBoard({
 
   const prompt = (() => {
     if (!isSelfTurn || view.phase === "FINISHED") return null;
+    if (!canInteract) return "ターン開始の演出を確認してください";
     if (view.phase === "WAITING_FOR_PLAY") return "手札から出すカードを選んでください";
     if (view.phase === "WAITING_FOR_TARGET") return "効果の対象を選んでください";
     if (view.phase === "WAITING_FOR_GUESS") return "相手の手札ランクを宣言してください";
@@ -399,12 +505,14 @@ export function GameBoard({
 
       {turnAnnouncement && (
         <div
-          className={`turn-announcement ${turnAnnouncement.self ? "is-self" : ""}`}
-          key={`${turnAnnouncement.turn}-${turnAnnouncement.label}`}
-          aria-hidden="true"
+          className={`turn-announcement ${turnAnnouncement.isSelf ? "is-self" : ""}`}
+          key={turnAnnouncement.turnKey}
+          role="status"
+          aria-live="assertive"
         >
-          <span>TURN SHIFT · {turnAnnouncement.turn}</span>
-          <strong>{turnAnnouncement.label}</strong>
+          <span>TURN {turnAnnouncement.turn}</span>
+          <strong>Turn change</strong>
+          <b>{turnAnnouncement.playerName}の手番</b>
         </div>
       )}
 
@@ -517,7 +625,7 @@ export function GameBoard({
           <div className={`opponents opponents-${opponents.length}`}>
             {opponents.map((player) => {
               const isTargetable =
-                isSelfTurn &&
+                canInteract &&
                 view.phase === "WAITING_FOR_TARGET" &&
                 view.legalTargetIds.includes(player.id);
               const isTargetSelected =
@@ -582,17 +690,23 @@ export function GameBoard({
             })}
           </div>
 
-          {drawAnimationKey > 0 && (
-            <span className="draw-flight" key={drawAnimationKey} aria-hidden="true">
+          {drawPresentation && (
+            <span
+              className={`draw-flight ${
+                drawPresentation.isSelf ? "is-self-draw" : "is-opponent-draw"
+              }`}
+              key={drawPresentation.turnKey}
+              aria-hidden="true"
+            >
               <i />
             </span>
           )}
 
           <div className="table-center">
             <div className="deck-stack">
-              <CardBack label={`山札 残り${view.deckCount}枚`} />
-              <b className="deck-count-pop" key={view.deckCount}>
-                {view.deckCount}
+              <CardBack label={`山札 残り${displayedDeckCount}枚`} />
+              <b className="deck-count-pop" key={displayedDeckCount}>
+                {displayedDeckCount}
               </b>
             </div>
             <div className="seal-card">
@@ -633,26 +747,27 @@ export function GameBoard({
                     key={card.id}
                     motionIndex={index}
                     selected={selection?.kind === "SAGE" && selection.value === card.id}
+                    disabled={!canInteract}
                     onClick={() => setSelection({ kind: "SAGE", value: card.id })}
                   />
                 ))}
               </div>
             ) : (
               <div className="hand-cards" aria-label="自分の手札">
-                {view.selfHand.map((card, index) => (
+                {displayedHand.map((card, index) => (
                   <GameCard
                     card={card}
                     key={card.id}
                     motionIndex={index}
                     selected={selection?.kind === "CARD" && selection.value === card.id}
-                    disabled={!view.legalCardIds.includes(card.id)}
+                    disabled={!canInteract || !view.legalCardIds.includes(card.id)}
                     onClick={() => setSelection({ kind: "CARD", value: card.id })}
                   />
                 ))}
               </div>
             )}
 
-            {isSelfTurn && view.phase !== "FINISHED" && (
+            {canInteract && (
               <section
                 className={`action-dock ${selection ? "has-selection" : ""}`}
                 aria-label="現在の操作"
@@ -777,8 +892,10 @@ export function GameBoard({
             <small>TURN GUIDE</small>
             <h2>{prompt ?? "盤面を見守っています"}</h2>
             <div className="turn-flow" aria-hidden="true">
-              <span className="is-complete">01 引く</span>
-              <span className={isSelfTurn ? "is-active" : ""}>02 選ぶ</span>
+              <span className={canInteract ? "is-complete" : isSelfTurn ? "is-active" : ""}>
+                01 引く
+              </span>
+              <span className={canInteract ? "is-active" : ""}>02 選ぶ</span>
               <span>03 効果</span>
             </div>
             {isSelfTurn && (
