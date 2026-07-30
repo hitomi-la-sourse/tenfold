@@ -40,6 +40,14 @@ interface DuelOutcome {
   cards: [CardInstance, CardInstance] | null;
 }
 
+interface SpiritSwapMoment {
+  actorName: string;
+  targetName: string;
+  actorCard: CardInstance | null;
+  targetCard: CardInstance | null;
+  message: string;
+}
+
 type PresentationEvent =
   | {
       kind: "CARD";
@@ -52,6 +60,11 @@ type PresentationEvent =
       message: string;
       sourceCard: CardInstance | null;
       duel: DuelOutcome | null;
+    }
+  | {
+      kind: "SPIRIT_SWAP";
+      id: string;
+      moment: SpiritSwapMoment;
     }
   | {
       kind: "TURN";
@@ -88,6 +101,7 @@ const DRAW_VISIBLE_MS = 820;
 const PLAYED_CARD_VISIBLE_MS = 3000;
 const EFFECT_NOTICE_VISIBLE_MS = 3600;
 const DUEL_NOTICE_VISIBLE_MS = 4800;
+const SPIRIT_SWAP_VISIBLE_MS = 4400;
 
 function playedCardFromLog(
   view: PlayerGameView,
@@ -131,6 +145,36 @@ function parseDuelOutcome(view: PlayerGameView, message: string): DuelOutcome | 
     winner: result === "DRAW" ? null : result.endsWith(" WIN") ? result.slice(0, -4) : null,
     cards: duel ? [duel.actorCard, duel.targetCard] : null,
   };
+}
+
+function spiritSwapFromLog(
+  view: PlayerGameView,
+  message: string,
+  selfHandBeforeSwap: CardInstance[],
+): SpiritSwapMoment | null {
+  const suffix = "が手札を交換しました";
+  if (!message.endsWith(suffix)) return null;
+  const matchup = message.slice(0, -suffix.length);
+
+  for (const actor of view.players) {
+    for (const target of view.players) {
+      if (actor.id === target.id || `${actor.nickname}と${target.nickname}` !== matchup) continue;
+      const selfCardBeforeSwap = selfHandBeforeSwap[0] ?? null;
+      const selfCardAfterSwap = view.selfHand[0] ?? null;
+      const actorIsSelf = actor.id === view.selfPlayerId;
+      const targetIsSelf = target.id === view.selfPlayerId;
+
+      return {
+        actorName: actorIsSelf ? "あなた" : actor.nickname,
+        targetName: targetIsSelf ? "あなた" : target.nickname,
+        actorCard: actorIsSelf ? selfCardBeforeSwap : targetIsSelf ? selfCardAfterSwap : null,
+        targetCard: targetIsSelf ? selfCardBeforeSwap : actorIsSelf ? selfCardAfterSwap : null,
+        message,
+      };
+    }
+  }
+
+  return null;
 }
 
 function isGenericResult(message: string): boolean {
@@ -226,6 +270,8 @@ export function GameBoard({
   const [displayedHand, setDisplayedHand] = useState<CardInstance[]>(() =>
     initialDisplayedHand(view),
   );
+  const displayedHandRef = useRef(displayedHand);
+  displayedHandRef.current = displayedHand;
   const [displayedDeckCount, setDisplayedDeckCount] = useState(() =>
     initialDisplayedDeckCount(view),
   );
@@ -243,6 +289,7 @@ export function GameBoard({
   const playedCard = activePresentation?.kind === "CARD" ? activePresentation.moment : null;
   const effectNotice: EffectNotice | null =
     activePresentation?.kind === "EFFECT" ? activePresentation : null;
+  const spiritSwap = activePresentation?.kind === "SPIRIT_SWAP" ? activePresentation.moment : null;
   const turnAnnouncement = activePresentation?.kind === "TURN" ? activePresentation.moment : null;
   const drawPresentation = activePresentation?.kind === "DRAW" ? activePresentation.moment : null;
   const currentTurnKey = `${view.gameId}:${view.turnNumber}:${view.currentPlayerId}`;
@@ -277,7 +324,9 @@ export function GameBoard({
     previousLogCount.current = null;
     activeSourceCard.current = null;
     setPresentationQueue(initialPresentationEvents(view));
-    setDisplayedHand(initialDisplayedHand(view));
+    const nextDisplayedHand = initialDisplayedHand(view);
+    displayedHandRef.current = nextDisplayedHand;
+    setDisplayedHand(nextDisplayedHand);
     setDisplayedDeckCount(initialDisplayedDeckCount(view));
     setPresentedTurnKey(null);
     setShowResultOverlay(view.phase === "FINISHED");
@@ -311,12 +360,23 @@ export function GameBoard({
     const candidates = newEntries.filter(
       (entry) => !playedEntries.has(entry.id) && !entry.message.endsWith("の手番です"),
     );
-    const highlighted =
-      candidates.find((entry) => entry.message.startsWith("貴族の対決：")) ??
-      [...candidates].reverse().find((entry) => !isGenericResult(entry.message)) ??
-      candidates.at(-1);
+    const swapEntry = candidates.find((entry) => entry.message.endsWith("が手札を交換しました"));
+    const swapMoment = swapEntry
+      ? spiritSwapFromLog(view, swapEntry.message, displayedHandRef.current)
+      : null;
+    const highlighted = swapMoment
+      ? null
+      : (candidates.find((entry) => entry.message.startsWith("貴族の対決：")) ??
+        [...candidates].reverse().find((entry) => !isGenericResult(entry.message)) ??
+        candidates.at(-1));
 
-    if (highlighted) {
+    if (swapEntry && swapMoment) {
+      queued.push({
+        kind: "SPIRIT_SWAP",
+        id: `spirit-swap-${swapEntry.id}`,
+        moment: swapMoment,
+      });
+    } else if (highlighted) {
       queued.push({
         kind: "EFFECT",
         id: `effect-${highlighted.id}`,
@@ -349,6 +409,7 @@ export function GameBoard({
       if (activePresentation.kind === "EFFECT") {
         return activePresentation.duel ? DUEL_NOTICE_VISIBLE_MS : EFFECT_NOTICE_VISIBLE_MS;
       }
+      if (activePresentation.kind === "SPIRIT_SWAP") return SPIRIT_SWAP_VISIBLE_MS;
       if (activePresentation.kind === "TURN") return TURN_ANNOUNCEMENT_MS;
       return DRAW_VISIBLE_MS;
     })();
@@ -358,11 +419,13 @@ export function GameBoard({
         !activePresentation.moment.willDraw &&
         activePresentation.moment.revealAfterTurn
       ) {
+        displayedHandRef.current = activePresentation.moment.selfHand;
         setDisplayedHand(activePresentation.moment.selfHand);
         setDisplayedDeckCount(activePresentation.moment.deckCount);
         setPresentedTurnKey(activePresentation.moment.turnKey);
       }
       if (activePresentation.kind === "DRAW") {
+        displayedHandRef.current = activePresentation.moment.selfHand;
         setDisplayedHand(activePresentation.moment.selfHand);
         setDisplayedDeckCount(activePresentation.moment.deckCount);
         setPresentedTurnKey(activePresentation.moment.turnKey);
@@ -378,7 +441,9 @@ export function GameBoard({
     ) {
       return;
     }
-    setDisplayedHand([...view.selfHand]);
+    const nextDisplayedHand = [...view.selfHand];
+    displayedHandRef.current = nextDisplayedHand;
+    setDisplayedHand(nextDisplayedHand);
     setDisplayedDeckCount(view.deckCount);
   }, [
     currentTurnKey,
@@ -404,7 +469,11 @@ export function GameBoard({
     const command = commandForSelection(view, selection);
     if (!command) return;
     if (selection?.kind === "CARD") {
-      setDisplayedHand((currentHand) => currentHand.filter((card) => card.id !== selection.value));
+      setDisplayedHand((currentHand) => {
+        const nextDisplayedHand = currentHand.filter((card) => card.id !== selection.value);
+        displayedHandRef.current = nextDisplayedHand;
+        return nextDisplayedHand;
+      });
     }
     playEffect("play", soundEnabled);
     onCommand(command);
@@ -586,6 +655,67 @@ export function GameBoard({
             ) : (
               <strong>{effectNotice.message}</strong>
             )}
+          </div>
+        </div>
+      )}
+
+      {spiritSwap && (
+        <div
+          className="spirit-swap-stage"
+          key={activePresentation?.id}
+          role="status"
+          aria-live="polite"
+          aria-label={spiritSwap.message}
+        >
+          <span className="spirit-mist spirit-mist-a" aria-hidden="true" />
+          <span className="spirit-mist spirit-mist-b" aria-hidden="true" />
+          <div className="spirit-swap-heading">
+            <small>SPIRIT · SOUL TRANSPOSE</small>
+            <strong>手札交換</strong>
+            <span>
+              {spiritSwap.actorName} <i>↔</i> {spiritSwap.targetName}
+            </span>
+          </div>
+          <div className="spirit-swap-arena">
+            <span className="spirit-swap-orbit spirit-swap-orbit-a" aria-hidden="true" />
+            <span className="spirit-swap-orbit spirit-swap-orbit-b" aria-hidden="true" />
+            <div className="spirit-swap-player is-actor">
+              <small>CASTER</small>
+              <strong>{spiritSwap.actorName}</strong>
+            </div>
+            <div className="spirit-swap-player is-target">
+              <small>TARGET</small>
+              <strong>{spiritSwap.targetName}</strong>
+            </div>
+            <div
+              className="spirit-swap-card is-actor-card"
+              aria-label={`${spiritSwap.actorName}から渡す手札`}
+            >
+              {spiritSwap.actorCard ? (
+                <GameCard card={spiritSwap.actorCard} compact />
+              ) : (
+                <CardBack label="交換する手札" />
+              )}
+            </div>
+            <div
+              className="spirit-swap-card is-target-card"
+              aria-label={`${spiritSwap.targetName}から渡す手札`}
+            >
+              {spiritSwap.targetCard ? (
+                <GameCard card={spiritSwap.targetCard} compact />
+              ) : (
+                <CardBack label="交換する手札" />
+              )}
+            </div>
+            <div className="spirit-swap-seal" aria-hidden="true">
+              <CardSigil type="SPIRIT" />
+              <i />
+            </div>
+          </div>
+          <div className="spirit-swap-complete">
+            <i />
+            <span>EXCHANGE COMPLETE</span>
+            <i />
           </div>
         </div>
       )}

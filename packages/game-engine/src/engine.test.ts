@@ -186,6 +186,9 @@ describe("card effects", () => {
     const resolved = play(state, state.players[0]!.hand[0]!.id);
     expect(resolved.players[0]!.hand[0]!.type).toBe("BOY");
     expect(resolved.players[1]!.hand[0]!.type).toBe("HERO");
+    expect(
+      resolved.logs.some((entry) => entry.message === "アオイとレンが手札を交換しました"),
+    ).toBe(true);
   });
 
   it("lets sage choose from three and reshuffles the rest", () => {
