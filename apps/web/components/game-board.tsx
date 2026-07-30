@@ -7,7 +7,8 @@ import { CARD_BY_RANK } from "@tenfold/game-engine";
 import type { CardInstance, PlayerGameView } from "@tenfold/shared";
 import { CardBack, GameCard } from "./card";
 import { CardSigil } from "./sigil";
-import { getSoundEnabled, playEffect, saveSoundEnabled } from "@/lib/preferences";
+import { playGameSound, startGameMusic, stopGameMusic } from "@/lib/audio-engine";
+import { getSoundEnabled, saveSoundEnabled } from "@/lib/preferences";
 
 interface GameBoardProps {
   view: PlayerGameView;
@@ -264,6 +265,7 @@ export function GameBoard({
 }: GameBoardProps) {
   const [selection, setSelection] = useState<Selection>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [audioReady, setAudioReady] = useState(false);
   const [presentationQueue, setPresentationQueue] = useState<PresentationEvent[]>(() =>
     initialPresentationEvents(view),
   );
@@ -281,7 +283,10 @@ export function GameBoard({
   const logList = useRef<HTMLOListElement>(null);
   const previousLogCount = useRef<number | null>(null);
   const activeSourceCard = useRef<PlayedCardMoment | null>(null);
+  const soundedPresentation = useRef<string | null>(null);
+  const soundedResult = useRef<string | null>(null);
   const isSelfTurn = view.currentPlayerId === view.selfPlayerId;
+  const isGameFinished = view.phase === "FINISHED";
   const self = view.players.find((player) => player.id === view.selfPlayerId);
   const opponents = view.players.filter((player) => player.id !== view.selfPlayerId);
   const current = view.players.find((player) => player.id === view.currentPlayerId);
@@ -301,7 +306,17 @@ export function GameBoard({
 
   useEffect(() => {
     setSoundEnabled(getSoundEnabled());
+    setAudioReady(true);
   }, []);
+  useEffect(() => {
+    if (!audioReady) return;
+    if (soundEnabled && !isGameFinished) {
+      startGameMusic(true);
+    } else {
+      stopGameMusic();
+    }
+    return () => stopGameMusic();
+  }, [audioReady, isGameFinished, soundEnabled, view.gameId]);
   useLayoutEffect(() => {
     const scrollToTop = () => {
       const previousBehavior = document.documentElement.style.scrollBehavior;
@@ -338,8 +353,52 @@ export function GameBoard({
     });
   }, [view.logs.length]);
   useEffect(() => {
-    if (view.phase === "FINISHED") playEffect("win", soundEnabled);
-  }, [view.phase, soundEnabled]);
+    if (!audioReady || !activePresentation) return;
+    const soundKey = `${view.gameId}:${activePresentation.id}`;
+    if (soundedPresentation.current === soundKey) return;
+    soundedPresentation.current = soundKey;
+
+    if (activePresentation.kind === "CARD") {
+      playGameSound("card-play", soundEnabled, activePresentation.moment.card.rank);
+      return;
+    }
+    if (activePresentation.kind === "SPIRIT_SWAP") {
+      playGameSound("spirit-swap", soundEnabled);
+      return;
+    }
+    if (activePresentation.kind === "EFFECT") {
+      playGameSound(activePresentation.duel ? "duel" : "effect", soundEnabled);
+      return;
+    }
+    if (activePresentation.kind === "TURN") {
+      playGameSound(activePresentation.moment.isSelf ? "turn-self" : "turn-opponent", soundEnabled);
+      return;
+    }
+    playGameSound("draw", soundEnabled);
+  }, [activePresentation, audioReady, soundEnabled, view.gameId]);
+  useEffect(() => {
+    if (!audioReady || view.phase !== "FINISHED" || !showResultOverlay) return;
+    const resultKey = `${view.gameId}:${view.turnNumber}:${view.resultType}`;
+    if (soundedResult.current === resultKey) return;
+    soundedResult.current = resultKey;
+    const resultSound =
+      view.resultType === "DRAW"
+        ? "draw-result"
+        : view.winnerIds.includes(view.selfPlayerId)
+          ? "win"
+          : "lose";
+    playGameSound(resultSound, soundEnabled);
+  }, [
+    audioReady,
+    showResultOverlay,
+    soundEnabled,
+    view.gameId,
+    view.phase,
+    view.resultType,
+    view.selfPlayerId,
+    view.turnNumber,
+    view.winnerIds,
+  ]);
   useEffect(() => {
     const previous = previousLogCount.current;
     previousLogCount.current = view.logs.length;
@@ -465,6 +524,10 @@ export function GameBoard({
     const timer = window.setTimeout(() => setShowResultOverlay(true), 450);
     return () => window.clearTimeout(timer);
   }, [presentationQueue.length, view.phase]);
+  const chooseSelection = (nextSelection: Exclude<Selection, null>) => {
+    playGameSound("select", soundEnabled, 0, true);
+    setSelection(nextSelection);
+  };
   const submit = () => {
     const command = commandForSelection(view, selection);
     if (!command) return;
@@ -475,7 +538,7 @@ export function GameBoard({
         return nextDisplayedHand;
       });
     }
-    playEffect("play", soundEnabled);
+    playGameSound("confirm", soundEnabled, 0, true);
     onCommand(command);
     setSelection(null);
   };
@@ -551,21 +614,39 @@ export function GameBoard({
             <i /> {connectionLabel}
           </span>
           <button
-            className="icon-button"
+            className={`sound-toggle ${soundEnabled ? "is-on" : ""}`}
             type="button"
             onClick={() => {
               const next = !soundEnabled;
               setSoundEnabled(next);
               saveSoundEnabled(next);
+              if (next) {
+                startGameMusic(true);
+                playGameSound("select", true, 0, true);
+              } else {
+                stopGameMusic();
+              }
             }}
-            aria-label={`効果音を${soundEnabled ? "オフ" : "オン"}にする`}
+            aria-label={`BGMと効果音を${soundEnabled ? "オフ" : "オン"}にする`}
+            aria-pressed={soundEnabled}
           >
-            {soundEnabled ? "♪" : "×"}
+            <span className="sound-equalizer" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+            <span className="sound-toggle-copy">
+              <small>SOUND</small>
+              <strong>{soundEnabled ? "BGM + SE" : "MUTED"}</strong>
+            </span>
           </button>
           <button
             className="text-button"
             type="button"
-            onClick={() => rulesDialog.current?.showModal()}
+            onClick={() => {
+              playGameSound("select", soundEnabled, 0, true);
+              rulesDialog.current?.showModal();
+            }}
           >
             ルール
           </button>
@@ -803,7 +884,7 @@ export function GameBoard({
                         className={isTargetSelected ? "selected" : ""}
                         type="button"
                         aria-pressed={isTargetSelected}
-                        onClick={() => setSelection({ kind: "TARGET", value: player.id })}
+                        onClick={() => chooseSelection({ kind: "TARGET", value: player.id })}
                       >
                         <span>
                           {isTargetSelected
@@ -878,7 +959,7 @@ export function GameBoard({
                     motionIndex={index}
                     selected={selection?.kind === "SAGE" && selection.value === card.id}
                     disabled={!canInteract}
-                    onClick={() => setSelection({ kind: "SAGE", value: card.id })}
+                    onClick={() => chooseSelection({ kind: "SAGE", value: card.id })}
                   />
                 ))}
               </div>
@@ -891,7 +972,7 @@ export function GameBoard({
                     motionIndex={index}
                     selected={selection?.kind === "CARD" && selection.value === card.id}
                     disabled={!canInteract || !view.legalCardIds.includes(card.id)}
-                    onClick={() => setSelection({ kind: "CARD", value: card.id })}
+                    onClick={() => chooseSelection({ kind: "CARD", value: card.id })}
                   />
                 ))}
               </div>
@@ -928,7 +1009,7 @@ export function GameBoard({
                         className={
                           selection?.kind === "GUESS" && selection.value === rank ? "selected" : ""
                         }
-                        onClick={() => setSelection({ kind: "GUESS", value: rank })}
+                        onClick={() => chooseSelection({ kind: "GUESS", value: rank })}
                         key={rank}
                         aria-label={`ランク${rank} ${CARD_BY_RANK[rank]!.displayName}と宣言`}
                       >
@@ -949,7 +1030,7 @@ export function GameBoard({
                           motionIndex={index}
                           key={card.id}
                           selected={selection?.kind === "EXECUTION" && selection.value === card.id}
-                          onClick={() => setSelection({ kind: "EXECUTION", value: card.id })}
+                          onClick={() => chooseSelection({ kind: "EXECUTION", value: card.id })}
                         />
                       ))}
                     </div>
@@ -965,7 +1046,7 @@ export function GameBoard({
                             ? "selected"
                             : ""
                         }
-                        onClick={() => setSelection({ kind: "DEATH", value: position })}
+                        onClick={() => chooseSelection({ kind: "DEATH", value: position })}
                         key={position}
                       >
                         <CardBack label={`伏せ札 ${position}`} />
@@ -1107,10 +1188,24 @@ export function GameBoard({
               ))}
             </div>
             <div className="result-actions">
-              <button className="button button-primary" type="button" onClick={onRematch}>
+              <button
+                className="button button-primary"
+                type="button"
+                onClick={() => {
+                  playGameSound("confirm", soundEnabled, 0, true);
+                  onRematch();
+                }}
+              >
                 再戦する
               </button>
-              <button className="button button-secondary" type="button" onClick={onExit}>
+              <button
+                className="button button-secondary"
+                type="button"
+                onClick={() => {
+                  playGameSound("select", soundEnabled, 0, true);
+                  onExit();
+                }}
+              >
                 退出する
               </button>
             </div>
@@ -1122,7 +1217,10 @@ export function GameBoard({
         <button
           className="dialog-close"
           type="button"
-          onClick={() => rulesDialog.current?.close()}
+          onClick={() => {
+            playGameSound("select", soundEnabled, 0, true);
+            rulesDialog.current?.close();
+          }}
           aria-label="ルールを閉じる"
         >
           ×
@@ -1138,7 +1236,10 @@ export function GameBoard({
         <button
           className="button button-primary"
           type="button"
-          onClick={() => rulesDialog.current?.close()}
+          onClick={() => {
+            playGameSound("confirm", soundEnabled, 0, true);
+            rulesDialog.current?.close();
+          }}
         >
           対戦へ戻る
         </button>
